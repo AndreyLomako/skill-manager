@@ -6,13 +6,11 @@ const DELAY_MS = 50;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-export async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
-  await mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  await writeFile(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+/** rename with retries on EPERM/EBUSY (Windows: antivirus/OneDrive briefly lock fresh files). */
+export async function renameWithRetry(from: string, to: string): Promise<void> {
   for (let attempt = 0; ; attempt++) {
     try {
-      await rename(tmp, file);
+      await rename(from, to);
       return;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
@@ -20,8 +18,19 @@ export async function writeJsonAtomic(file: string, data: unknown): Promise<void
         await sleep(DELAY_MS);
         continue;
       }
-      await rm(tmp, { force: true }).catch(() => {});
       throw e;
     }
+  }
+}
+
+export async function writeJsonAtomic(file: string, data: unknown): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(tmp, JSON.stringify(data, null, 2) + '\n', 'utf8');
+  try {
+    await renameWithRetry(tmp, file);
+  } catch (e) {
+    await rm(tmp, { force: true }).catch(() => {});
+    throw e;
   }
 }

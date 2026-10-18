@@ -129,4 +129,24 @@ describe('loadCatalog', () => {
     });
     expect((await loadCatalog(paths)).categories.map((c) => c.id)).toContain('misc');
   });
+
+  it('неудачное обновление git-источника: скилл остаётся доступным, предупреждение в errors', async () => {
+    const { root, paths } = await setup(
+      {
+        ...base,
+        sources: [...base.sources, { id: 'remote', type: 'git', url: 'https://example.invalid/r.git' }],
+        skills: [...base.skills, { id: 'far', source: 'remote', path: 'far', category: 'video' }],
+      },
+      undefined,
+      { '.cache/base-remote/.git/HEAD': 'ref: refs/heads/main', '.cache/base-remote/far/SKILL.md': skillMd('Далёкий') },
+    );
+    const failingGit = async () => {
+      throw new Error('сеть недоступна');
+    };
+    const c = await loadCatalog(paths, { update: true }, failingGit);
+    expect(c.skills.find((s) => s.id === 'far')).toMatchObject({
+      dir: path.join(root, '.cache', 'base-remote', 'far'), title: 'Далёкий',
+    });
+    expect(c.errors).toEqual(['Источник «remote» (базовый): не удалось обновить — сеть недоступна']);
+  });
 });

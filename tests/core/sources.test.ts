@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { ensureSource, runGit, sourceCacheDir } from '../../src/core/sources';
@@ -76,6 +76,7 @@ describe('ensureSource', () => {
     const calls: string[][] = [];
     const fake = async (args: string[]) => {
       calls.push(args);
+      await mkdir(path.join(args[args.length - 1], '.git'), { recursive: true });
     };
     await ensureSource(
       { id: 'evil', type: 'git', url: '--upload-pack=calc' },
@@ -91,5 +92,84 @@ describe('ensureSource', () => {
         { layer: 'base', manifestDir: root, cacheDir: path.join(root, '.cache'), update: false },
       ),
     ).rejects.toThrow();
+  });
+
+  it('git: неудачное обновление оставляет существующий клон и сообщает предупреждение', async () => {
+    const root = await tmpDir();
+    const cacheDir = path.join(root, '.cache');
+    const dir = sourceCacheDir(cacheDir, 'user', 'demo');
+    await mkdir(path.join(dir, '.git'), { recursive: true });
+    const warnings: string[] = [];
+    const failing = async () => {
+      throw new Error('сеть недоступна');
+    };
+    const res = await ensureSource(
+      { id: 'demo', type: 'git', url: 'https://example.invalid/r.git', ref: 'main' },
+      { layer: 'user', manifestDir: root, cacheDir, update: true, onWarning: (m) => warnings.push(m) },
+      failing,
+    );
+    expect(res).toBe(dir);
+    expect(warnings).toEqual(['сеть недоступна']);
+    await access(path.join(dir, '.git'));
+  });
+
+  it('git: обновление — fetch нужного ref и reset --hard FETCH_HEAD', async () => {
+    const root = await tmpDir();
+    const cacheDir = path.join(root, '.cache');
+    const calls: { args: string[]; cwd?: string }[] = [];
+    const fake = async (args: string[], cwd?: string) => {
+      calls.push({ args, cwd });
+    };
+    const opts = { layer: 'base' as const, manifestDir: root, cacheDir, update: true };
+    for (const id of ['tagged', 'plain']) {
+      await mkdir(path.join(sourceCacheDir(cacheDir, 'base', id), '.git'), { recursive: true });
+    }
+    await ensureSource({ id: 'tagged', type: 'git', url: 'https://x/r.git', ref: 'v1.0' }, opts, fake);
+    await ensureSource({ id: 'plain', type: 'git', url: 'https://x/r.git' }, opts, fake);
+    const tagged = sourceCacheDir(cacheDir, 'base', 'tagged');
+    const plain = sourceCacheDir(cacheDir, 'base', 'plain');
+    expect(calls).toEqual([
+      { args: ['fetch', '--depth', '1', '--', 'origin', 'v1.0'], cwd: tagged },
+      { args: ['reset', '--hard', 'FETCH_HEAD'], cwd: tagged },
+      { args: ['fetch', '--depth', '1', '--', 'origin', 'HEAD'], cwd: plain },
+      { args: ['reset', '--hard', 'FETCH_HEAD'], cwd: plain },
+    ]);
+  });
+
+  it('git: неудачный клон не оставляет ни папки, ни временной папки', async () => {
+    const root = await tmpDir();
+    const cacheDir = path.join(root, '.cache');
+    const failing = async (args: string[]) => {
+      const target = args[args.length - 1];
+      await mkdir(path.join(target, '.git'), { recursive: true });
+      await writeFile(path.join(target, 'partial.txt'), 'x');
+      throw new Error('обрыв связи');
+    };
+    await expect(
+      ensureSource(
+        { id: 'demo', type: 'git', url: 'https://example.invalid/r.git' },
+        { layer: 'base', manifestDir: root, cacheDir, update: false },
+        failing,
+      ),
+    ).rejects.toThrow(/обрыв связи/);
+    expect(await readdir(cacheDir)).toEqual([]);
+  });
+
+  it('git: параллельные вызовы для одного источника клонируют один раз', async () => {
+    const root = await tmpDir();
+    const cacheDir = path.join(root, '.cache');
+    let clones = 0;
+    const fake = async (args: string[]) => {
+      if (args[0] === 'clone') clones++;
+      await new Promise((r) => setTimeout(r, 30));
+      await mkdir(path.join(args[args.length - 1], '.git'), { recursive: true });
+    };
+    const src = { id: 'demo', type: 'git' as const, url: 'https://example.invalid/r.git' };
+    const opts = { layer: 'base' as const, manifestDir: root, cacheDir, update: false };
+    const [a, b] = await Promise.all([ensureSource(src, opts, fake), ensureSource(src, opts, fake)]);
+    expect(clones).toBe(1);
+    expect(a).toBe(sourceCacheDir(cacheDir, 'base', 'demo'));
+    expect(b).toBe(a);
+    expect(await readdir(cacheDir)).toEqual(['base-demo']);
   });
 });

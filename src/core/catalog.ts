@@ -37,7 +37,9 @@ async function resolveLayer(
   const sourceDirs = new Map<string, string | null>();
   for (const src of manifest.sources) {
     try {
-      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update }, git));
+      const onWarning = (msg: string) =>
+        errors.push(`Источник «${src.id}» (${LAYER_LABEL[layer]}): не удалось обновить — ${msg}`);
+      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update, onWarning }, git));
     } catch (e) {
       sourceDirs.set(src.id, null);
       errors.push(`Источник «${src.id}» (${LAYER_LABEL[layer]}): ${(e as Error).message}`);
