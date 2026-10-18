@@ -23,9 +23,11 @@ describe('resolveAppPaths', () => {
         SKILL_MANAGER_CATALOG_DIR: 'D:\\cat',
         SKILL_MANAGER_VSCODE_STORAGE: 'D:\\s.json',
         SKILL_MANAGER_HOME: 'D:\\home',
+        SKILL_MANAGER_CACHE_DIR: 'D:\\cache',
       },
       'C:\\app',
     );
+    expect(p.cacheDir).toBe('D:\\cache');
     expect(p.userDir).toBe('D:\\my');
     expect(p.baseCatalogDir).toBe('D:\\cat');
     expect(p.vscodeStorage).toBe('D:\\s.json');

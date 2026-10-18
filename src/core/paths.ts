@@ -21,7 +21,7 @@ export function resolveAppPaths(
   return {
     baseCatalogDir: env.SKILL_MANAGER_CATALOG_DIR ?? path.join(root, 'catalog'),
     userDir,
-    cacheDir: path.join(root, '.cache'),
+    cacheDir: env.SKILL_MANAGER_CACHE_DIR ?? path.join(root, '.cache'),
     vscodeStorage:
       env.SKILL_MANAGER_VSCODE_STORAGE ??
       path.join(env.APPDATA ?? '', 'Code', 'User', 'globalStorage', 'storage.json'),
