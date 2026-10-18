@@ -52,7 +52,7 @@ async function workspaceFolders(configUri: string): Promise<string[]> {
   const file = fileUriToPath(configUri);
   if (!file) return [];
   try {
-    const json = JSON.parse(stripJsonc(await readFile(file, 'utf8')));
+    const json = JSON.parse(stripJsonc(await readFile(/*turbopackIgnore: true*/ file, 'utf8')));
     const dir = path.win32.dirname(file);
     const folders: Array<{ path?: unknown; uri?: unknown }> = Array.isArray(json.folders) ? json.folders : [];
     return folders
