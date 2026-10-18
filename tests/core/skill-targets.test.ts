@@ -22,7 +22,7 @@ describe('имена скиллов', () => {
   });
 
   it.each(['pdf', 'my-skill', 'a.b_c'])('допустимое «%s»', (n) => expect(isValidSkillName(n)).toBe(true));
-  it.each(['', '..', '../x', 'a/b', 'a\\b', 'synced', '.trash', '-x'])('недопустимое «%s»', (n) =>
+  it.each(['', '..', '../x', 'a/b', 'a\\b', 'synced', '.trash', '-x', 'Synced', 'SYNCED', 'a.', 'con', 'NUL', 'com1', 'lpt9', 'aux'])('недопустимое «%s»', (n) =>
     expect(isValidSkillName(n)).toBe(false),
   );
 });
