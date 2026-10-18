@@ -10,6 +10,18 @@ export function skillsRoot(scope: Scope, agent: AgentId, home: string): string {
   return path.join(base, AGENT_DIR[agent], 'skills');
 }
 
+// Папки агентов в home, которые нельзя принимать за проект: установка/восстановление туда
+// писало бы в ~/.codex, плагины или глобальные skills.
+const FORBIDDEN_HOME_DIRS = [['.codex'], ['.claude', 'plugins'], ['.claude', 'skills'], ['.agents', 'skills']];
+
+export function isForbiddenProjectRoot(projectPath: string, home: string): boolean {
+  const p = path.resolve(projectPath).toLowerCase();
+  return FORBIDDEN_HOME_DIRS.some((parts) => {
+    const root = path.resolve(home, ...parts).toLowerCase();
+    return p === root || p.startsWith(root + path.sep);
+  });
+}
+
 // synced — папка синхронизации claude.ai; имена на точку — служебные (.trash, .system).
 // Windows без учёта регистра: 'Synced' указывает на ту же папку, что и 'synced'.
 export function isReservedSkillName(name: string): boolean {

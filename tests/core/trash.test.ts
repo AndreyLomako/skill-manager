@@ -105,6 +105,16 @@ describe('restoreFromTrash: entry.json не доверяется', () => {
     expect(await exists(path.join(root, 'proj', '.agents', 'skills', 'local', 'SKILL.md'))).toBe(true);
   });
 
+  it('проект внутри служебных папок home (~/.claude/plugins) отклоняется даже если разрешён', async () => {
+    const { home, trash } = await setup();
+    const proj = path.join(home, '.claude', 'plugins', 'p');
+    await writeFiles(proj, { '.claude/skills/x/SKILL.md': 'x' });
+    const entry = await removeSkill({ kind: 'project', path: proj }, 'claude', 'x', home, trash);
+    await expect(restoreFromTrash(trash, entry.id, allow(home))).rejects.toThrow('Некорректный путь восстановления');
+    expect(await exists(path.join(proj, '.claude', 'skills', 'x'))).toBe(false);
+    expect(await exists(path.join(trash, entry.id, 'skill', 'SKILL.md'))).toBe(true);
+  });
+
   it('несовпадение agent/name с путём отклоняется', async () => {
     const { home, trash } = await setup();
     const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);

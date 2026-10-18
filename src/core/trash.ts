@@ -2,7 +2,7 @@ import { access, cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { renameWithRetry, writeJsonAtomic } from './json-file';
-import { isValidSkillName, skillsRoot } from './skill-targets';
+import { isForbiddenProjectRoot, isValidSkillName, skillsRoot } from './skill-targets';
 import type { AgentId, Scope, TrashEntry } from './types';
 
 const ENTRY = 'entry.json';
@@ -122,7 +122,9 @@ export async function restoreFromTrash(
     expected = path.join(skillsRoot({ kind: 'global' }, agent, opts.home), name);
   } else {
     const projectPath = path.resolve(path.dirname(path.dirname(path.dirname(path.resolve(originalPath)))));
-    if (!(await opts.isAllowedProject(projectPath))) throw new Error(BAD_TARGET);
+    if (isForbiddenProjectRoot(projectPath, opts.home) || !(await opts.isAllowedProject(projectPath))) {
+      throw new Error(BAD_TARGET);
+    }
     expected = path.join(skillsRoot({ kind: 'project', path: projectPath }, agent, opts.home), name);
   }
   if (path.resolve(originalPath).toLowerCase() !== path.resolve(expected).toLowerCase()) throw new Error(BAD_TARGET);

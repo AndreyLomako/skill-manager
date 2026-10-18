@@ -7,7 +7,7 @@ import { getInstalled, installSkills } from '@/core/installer';
 import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
 import { listInstalled } from '@/core/inventory';
-import { skillsRoot, parseAgents } from '@/core/skill-targets';
+import { isForbiddenProjectRoot, skillsRoot, parseAgents } from '@/core/skill-targets';
 import { purgeTrash, removeSkill, restoreFromTrash } from '@/core/trash';
 import { ensureSource, sourceCacheDir } from '@/core/sources';
 import type {
@@ -56,8 +56,13 @@ async function checkScope(paths: AppPaths, scope: unknown): Promise<Scope | null
   if (!scope || typeof scope !== 'object') return null;
   const s = scope as { kind?: unknown; path?: unknown };
   if (s.kind === 'global') return { kind: 'global' };
-  if (s.kind === 'project' && typeof s.path === 'string' && (await isKnownProject(paths, s.path))) {
-    return { kind: 'project', path: s.path };
+  if (
+    s.kind === 'project' &&
+    typeof s.path === 'string' &&
+    !isForbiddenProjectRoot(s.path, paths.home) &&
+    (await isKnownProject(paths, s.path))
+  ) {
+    return { kind: 'project', path: path.resolve(s.path) };
   }
   return null;
 }

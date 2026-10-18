@@ -1,6 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { isReservedSkillName, isValidSkillName, parseAgents, skillsRoot } from '../../src/core/skill-targets';
+import {
+  isForbiddenProjectRoot,
+  isReservedSkillName,
+  isValidSkillName,
+  parseAgents,
+  skillsRoot,
+} from '../../src/core/skill-targets';
+
+describe('isForbiddenProjectRoot', () => {
+  it.each([
+    'C:\\home\\.codex',
+    'C:\\home\\.codex\\sub',
+    'c:\\HOME\\.Claude\\Plugins\\p',
+    'C:\\home\\.claude\\skills',
+    'C:\\home\\.agents\\skills\\a\\b',
+    'C:\\home\\.codex\\',
+  ])('«%s» запрещён', (p) => {
+    expect(isForbiddenProjectRoot(p, 'C:\\home')).toBe(true);
+  });
+
+  it.each(['C:\\home', 'C:\\home\\.claude', 'C:\\home\\.codexx', 'C:\\home\\.agents', 'C:\\work\\a'])('«%s» разрешён', (p) => {
+    expect(isForbiddenProjectRoot(p, 'C:\\home')).toBe(false);
+  });
+});
 
 describe('skillsRoot', () => {
   it.each([
