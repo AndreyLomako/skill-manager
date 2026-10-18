@@ -1,0 +1,6 @@
+.blob { position: absolute; inset: 0; pointer-events: none; }
+.blob__canvas { display: block; width: 100%; height: 100%; }
+.blob--fallback {
+  background: radial-gradient(circle at 50% 50%, rgba(40, 60, 160, 0.55) 0 34%, rgba(157, 77, 255, 0.6) 35.5%, transparent 37%);
+}
+.blob--fallback .blob__canvas { display: none; }
