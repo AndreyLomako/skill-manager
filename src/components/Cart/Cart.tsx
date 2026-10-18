@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { summarizeByCategory } from '@/core/selection';
 import type { CatalogSkill, CategoryDef, Project } from '@/core/types';
 import { Tile } from '../Tile/Tile';
@@ -19,6 +19,9 @@ interface Props {
 export function Cart({ project, selected, categories, busy, onRemove, onClear, onInstall }: Props) {
   const [open, setOpen] = useState(false);
   const count = selected.length;
+  useEffect(() => {
+    if (count === 0) setOpen(false);
+  }, [count]);
   const canInstall = project !== null && count > 0 && !busy;
 
   return (

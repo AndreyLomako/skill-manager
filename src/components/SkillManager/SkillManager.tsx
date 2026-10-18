@@ -51,6 +51,14 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const [notice, setNotice] = useState<Notice | null>(null);
   const [updateId, setUpdateId] = useState<string | null>(null);
 
+  const activePathRef = useRef(activePath);
+  const installedReq = useRef(0);
+  const installing = useRef(false);
+
+  useEffect(() => {
+    activePathRef.current = activePath;
+  }, [activePath]);
+
   const pulse = useCallback((kind: BlobPulse) => blob.current?.pulse(kind), []);
   const hover = useCallback(() => pulse('hover'), [pulse]);
 
@@ -63,15 +71,23 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   }, []);
 
   useEffect(() => {
-    if (activePath === null && projects.projects.length > 0) setActivePath(projects.projects[0].path);
+    const list = projects.projects;
+    if (activePath !== null && list.some((p) => p.path === activePath)) return;
+    const next = list.find((p) => p.active)?.path ?? list[0]?.path ?? null;
+    if (next !== activePath) setActivePath(next);
   }, [projects, activePath]);
 
   const refreshInstalled = useCallback(async (projectPath: string | null) => {
-    setInstalled(projectPath ? await getInstalledAction(projectPath) : {});
+    const req = ++installedReq.current;
+    const result = projectPath ? await getInstalledAction(projectPath) : {};
+    if (req === installedReq.current) setInstalled(result);
   }, []);
 
   useEffect(() => {
-    void refreshInstalled(activePath);
+    refreshInstalled(activePath).catch(() => undefined);
+    return () => {
+      installedReq.current++;
+    };
   }, [activePath, catalog, refreshInstalled]);
 
   useEffect(() => {
@@ -92,28 +108,39 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   };
 
   const install = async (ids: string[], overwrite: boolean) => {
-    if (!activePath || ids.length === 0) return;
+    if (installing.current || !project || ids.length === 0) return;
+    const targetPath = project.path;
+    const targetName = project.name;
+    installing.current = true;
     setBusy(true);
     try {
-      const results = await installSkillsAction(activePath, ids, overwrite);
+      const results = await installSkillsAction(targetPath, ids, overwrite);
       const failed = results.filter((r) => r.status === 'error');
       const done = new Set(results.filter((r) => r.status !== 'error').map((r) => r.skillId));
       setSelected((sel) => sel.filter((id) => !done.has(id)));
       pulse(failed.length > 0 ? 'error' : 'success');
       setNotice({
         tone: failed.length > 0 ? 'error' : 'success',
-        title: failed.length > 0 ? `Готово с ошибками (${failed.length})` : `Установлено в «${project?.name ?? activePath}»`,
+        title: failed.length > 0 ? `Готово с ошибками (${failed.length})` : `Установлено в «${targetName}»`,
         lines: results.map((r) => `${titleOf(r.skillId)} — ${STATUS_TEXT[r.status]}${r.message ? `: ${r.message}` : ''}`),
         hint: results.some((r) => r.status === 'installed')
           ? 'Перезапустите сессию Claude Code в этом проекте, чтобы скиллы подхватились.'
           : undefined,
       });
-      await refreshInstalled(activePath);
     } catch (e) {
       pulse('error');
       setNotice({ tone: 'error', title: 'Не удалось установить', lines: [(e as Error).message] });
+      return;
     } finally {
+      installing.current = false;
       setBusy(false);
+    }
+    if (activePathRef.current === targetPath) {
+      try {
+        await refreshInstalled(targetPath);
+      } catch {
+        // ошибка обновления статуса не должна выглядеть как ошибка установки
+      }
     }
   };
 
@@ -129,6 +156,9 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         pulse('error');
         setNotice({ tone: 'error', title: 'Каталог не обновлён', lines: [res.error] });
       }
+    } catch (e) {
+      pulse('error');
+      setNotice({ tone: 'error', title: 'Каталог не обновлён', lines: [(e as Error).message] });
     } finally {
       setRefreshing(false);
     }
@@ -198,8 +228,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         </div>
         {catalog.errors.length > 0 && (
           <ul className={styles.app__errors}>
-            {catalog.errors.map((e) => (
-              <li key={e}>{e}</li>
+            {catalog.errors.map((e, i) => (
+              <li key={i}>{e}</li>
             ))}
           </ul>
         )}
@@ -219,24 +249,25 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         <div className={`${styles.notice} ${styles[`notice--${notice.tone}`]}`} role="status" onClick={() => setNotice(null)}>
           <strong className={styles.notice__title}>{notice.title}</strong>
           <ul className={styles.notice__list}>
-            {notice.lines.map((line) => (
-              <li key={line}>{line}</li>
+            {notice.lines.map((line, i) => (
+              <li key={i}>{line}</li>
             ))}
           </ul>
           {notice.hint && <p className={styles.notice__hint}>{notice.hint}</p>}
         </div>
       )}
 
-      {updateId && (
+      {updateId && project && (
         <Dialog title="Обновить скилл?" onClose={() => setUpdateId(null)}>
           <p className={styles.dialog__text}>
-            «{titleOf(updateId)}» в проекте «{project?.name}» отличается от версии в каталоге. Установленная копия будет заменена.
+            «{titleOf(updateId)}» в проекте «{project.name}» отличается от версии в каталоге. Установленная копия будет заменена.
           </p>
           <div className={styles.dialog__actions}>
             <Tile
               title="Обновить"
               marker="↻"
               selected
+              disabled={busy}
               onClick={() => {
                 const id = updateId;
                 setUpdateId(null);
