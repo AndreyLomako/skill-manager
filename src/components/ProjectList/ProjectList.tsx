@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Project } from '@/core/types';
 import { Tile } from '../Tile/Tile';
 import styles from './ProjectList.module.css';
@@ -18,19 +18,31 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
 
   const open = projects.filter((p) => p.open);
   const recent = projects.filter((p) => !p.open);
 
   const submit = async () => {
-    const err = await onAddFolder(value);
-    if (err) {
-      setAddError(err);
-      return;
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    try {
+      const err = await onAddFolder(value);
+      if (err) {
+        setAddError(err);
+        return;
+      }
+      setAdding(false);
+      setValue('');
+      setAddError(null);
+    } catch (e) {
+      setAddError((e as Error).message || 'Не удалось добавить проект');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
     }
-    setAdding(false);
-    setValue('');
-    setAddError(null);
   };
 
   const renderTiles = (list: Project[], offset: number) =>
@@ -77,11 +89,14 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
             autoFocus
             placeholder="C:\путь\к\проекту"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => {
+              setValue(e.target.value);
+              setAddError(null);
+            }}
           />
           {addError && <p className={styles.projects__error}>{addError}</p>}
           <div className={styles.projects__row}>
-            <Tile title="Добавить" selected onClick={() => void submit()} />
+            <Tile title={busy ? 'Добавляю…' : 'Добавить'} selected disabled={busy} onClick={() => void submit()} />
             <Tile
               title="Отмена"
               onClick={() => {
