@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { MY_SKILLS } from '@/core/selection';
+import { INSTALLED, MY_SKILLS } from '@/core/selection';
 import type { CategoryDef } from '@/core/types';
 import { Tile } from '../Tile/Tile';
 import styles from './CategoryRing.module.css';
@@ -15,7 +15,11 @@ interface Props {
 }
 
 export function CategoryRing({ categories, active, counts, onSelect, onHover }: Props) {
-  const items = [...categories.map((c) => ({ id: c.id, title: c.title })), { id: MY_SKILLS, title: 'Мои скиллы' }];
+  const items = [
+    ...categories.map((c) => ({ id: c.id, title: c.title })),
+    { id: INSTALLED, title: 'Установлено' },
+    { id: MY_SKILLS, title: 'Мои скиллы' },
+  ];
   const step = 360 / items.length;
 
   return (
@@ -29,7 +33,7 @@ export function CategoryRing({ categories, active, counts, onSelect, onHover }: 
           <Tile
             index={i}
             title={c.title}
-            marker={c.id === MY_SKILLS ? '★' : undefined}
+            marker={c.id === MY_SKILLS ? '★' : c.id === INSTALLED ? '✓' : undefined}
             selected={c.id === active}
             badge={counts[c.id] || undefined}
             onClick={() => onSelect(c.id)}

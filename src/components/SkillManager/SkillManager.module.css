@@ -66,6 +66,19 @@
 .notice__list { display: grid; gap: 4px; font-size: 13px; color: var(--color-text-dim); }
 .notice__hint { margin-top: 10px; font-size: 13px; color: var(--color-success); }
 
+.notice__action {
+  margin-top: 12px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.notice__action:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+.notice__action:disabled { opacity: 0.5; cursor: default; }
+
 .dialog__text { margin-bottom: 18px; line-height: 1.5; color: var(--color-text-dim); }
 .dialog__actions { display: flex; gap: 10px; }
 

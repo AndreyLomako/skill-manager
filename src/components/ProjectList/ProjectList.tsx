@@ -71,7 +71,7 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
         onClick={() => onSelect(GLOBAL_PROJECT)}
         onHover={onHover}
       />
-      <h2 className={styles.projects__title}>Открыто в VS Code</h2>
+      <h2 className={styles.projects__title}>Открыто сейчас</h2>
       {open.length > 0 ? (
         <div className={styles.projects__list}>{renderTiles(open, 0)}</div>
       ) : (
