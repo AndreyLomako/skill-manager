@@ -11,7 +11,7 @@ export interface AppPaths {
 }
 
 export function resolveAppPaths(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
   root: string = process.cwd(),
 ): AppPaths {
   return {
