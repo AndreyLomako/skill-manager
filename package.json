@@ -14,6 +14,9 @@
     "electron:dev": "node scripts/prepare-standalone.mjs clean && next build && node scripts/prepare-standalone.mjs && node scripts/electron-dev.mjs",
     "dist": "node scripts/prepare-standalone.mjs clean && next build && node scripts/prepare-standalone.mjs && electron-builder --win nsis --x64"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.10"
+  },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
