@@ -76,6 +76,14 @@ describe('loadSettings', () => {
     expect(files).not.toContain('settings.json');
     expect(await readFile(path.join(paths.userDir, backup!), 'utf8')).toBe('{oops');
   });
+
+  it('пустой settings.json не считается битым и остаётся на месте', async () => {
+    const { root, paths } = await setup();
+    await writeFiles(root, { 'user/settings.json': '  \n' });
+    expect(await loadSettings(paths.userDir)).toEqual({ recent: [], manual: [] });
+    const files = await readdir(paths.userDir);
+    expect(files).toEqual(['settings.json']);
+  });
 });
 
 describe('listProjects', () => {

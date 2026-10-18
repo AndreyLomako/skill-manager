@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { writeJsonAtomic } from './json-file';
 import { emptyManifest, parseManifest } from './manifest';
 import { USER_MANIFEST } from './paths';
 import type { Manifest, SourceDef } from './types';
@@ -80,7 +81,6 @@ export async function addUserSkill(userDir: string, input: NewUserSkill): Promis
   const skillId = uniqueId(idBase, new Set(manifest.skills.map((s) => s.id)));
   manifest.skills.push({ id: skillId, source: sourceId, path: skillPath, category });
 
-  await mkdir(userDir, { recursive: true });
-  await writeFile(file, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  await writeJsonAtomic(file, manifest);
   return { skillId };
 }

@@ -1,5 +1,6 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { readFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { writeJsonAtomic } from './json-file';
 import type { AppPaths } from './paths';
 import type { Project } from './types';
 import { isVsCodeRunning, readOpenWindows, type VsCodeWindows } from './vscode-windows';
@@ -37,6 +38,7 @@ export async function loadSettings(userDir: string): Promise<Settings> {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { recent: [], manual: [] };
     throw e;
   }
+  if (!text.trim()) return { recent: [], manual: [] };
   let json: { recent?: unknown; manual?: unknown };
   try {
     json = JSON.parse(text);
@@ -50,8 +52,7 @@ export async function loadSettings(userDir: string): Promise<Settings> {
 }
 
 export async function saveSettings(userDir: string, s: Settings): Promise<void> {
-  await mkdir(userDir, { recursive: true });
-  await writeFile(path.join(userDir, SETTINGS_FILE), JSON.stringify(s, null, 2) + '\n', 'utf8');
+  await writeJsonAtomic(path.join(userDir, SETTINGS_FILE), s);
 }
 
 export function rememberOpen(s: Settings, open: string[]): Settings {
