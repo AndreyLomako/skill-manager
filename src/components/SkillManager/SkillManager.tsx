@@ -81,7 +81,9 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
 
   const refreshInstalled = useCallback(async (projectPath: string | null) => {
     const req = ++installedReq.current;
-    const result = projectPath ? await getInstalledAction(projectPath) : {};
+    const result = projectPath
+      ? ((await getInstalledAction({ kind: 'project', path: projectPath }, ['claude'])).claude ?? {})
+      : {};
     if (req === installedReq.current) setInstalled(result);
   }, []);
 
@@ -122,7 +124,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     installing.current = true;
     setBusy(true);
     try {
-      const results = await installSkillsAction(targetPath, ids, overwrite);
+      const results = await installSkillsAction({ kind: 'project', path: targetPath }, ['claude'], ids, overwrite);
       const failed = results.filter((r) => r.status === 'error');
       const done = new Set(results.filter((r) => r.status !== 'error').map((r) => r.skillId));
       setSelected((sel) => sel.filter((id) => !done.has(id)));

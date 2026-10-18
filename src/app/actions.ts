@@ -6,9 +6,20 @@ import { CatalogError, loadCatalog } from '@/core/catalog';
 import { getInstalled, installSkills } from '@/core/installer';
 import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
-import { skillsRoot } from '@/core/skill-targets';
+import { listInstalled } from '@/core/inventory';
+import { skillsRoot, parseAgents } from '@/core/skill-targets';
+import { purgeTrash, removeSkill, restoreFromTrash } from '@/core/trash';
 import { ensureSource, sourceCacheDir } from '@/core/sources';
-import type { Catalog, InstallResult, InstalledState, SourceDef } from '@/core/types';
+import type {
+  AgentId,
+  Catalog,
+  InstallResult,
+  InstalledSkill,
+  InstalledState,
+  Scope,
+  SourceDef,
+  TrashEntry,
+} from '@/core/types';
 import { addUserSkill, type NewUserSkill } from '@/core/user-catalog';
 
 const exists = (p: string) => access(p).then(() => true, () => false);
@@ -16,9 +27,6 @@ const exists = (p: string) => access(p).then(() => true, () => false);
 export type CatalogResult = { ok: true; catalog: Catalog } | { ok: false; error: string };
 
 const appPaths = () => resolveAppPaths();
-
-const claudeRoot = (paths: AppPaths, projectPath: string) =>
-  skillsRoot({ kind: 'project', path: projectPath }, 'claude', paths.home);
 
 export async function getProjectsAction(): Promise<ProjectsResult> {
   return listProjects(appPaths());
@@ -44,24 +52,94 @@ export async function getCatalogAction(update = false): Promise<CatalogResult> {
   }
 }
 
-export async function getInstalledAction(projectPath: string): Promise<InstalledState> {
+async function checkScope(paths: AppPaths, scope: unknown): Promise<Scope | null> {
+  if (!scope || typeof scope !== 'object') return null;
+  const s = scope as { kind?: unknown; path?: unknown };
+  if (s.kind === 'global') return { kind: 'global' };
+  if (s.kind === 'project' && typeof s.path === 'string' && (await isKnownProject(paths, s.path))) {
+    return { kind: 'project', path: s.path };
+  }
+  return null;
+}
+
+const UNKNOWN_SCOPE = 'Проект не найден в списке';
+
+export async function getInstalledAction(
+  scope: Scope,
+  agents: AgentId[],
+): Promise<Partial<Record<AgentId, InstalledState>>> {
   const paths = appPaths();
-  if (!(await isKnownProject(paths, projectPath))) return {};
+  const checked = await checkScope(paths, scope);
+  if (!checked) return {};
   const catalog = await loadCatalog(paths);
-  return getInstalled(claudeRoot(paths, projectPath), catalog.skills);
+  const out: Partial<Record<AgentId, InstalledState>> = {};
+  for (const agent of parseAgents(agents)) {
+    out[agent] = await getInstalled(skillsRoot(checked, agent, paths.home), catalog.skills);
+  }
+  return out;
 }
 
 export async function installSkillsAction(
-  projectPath: string,
+  scope: Scope,
+  agents: AgentId[],
   ids: string[],
   overwrite = false,
 ): Promise<InstallResult[]> {
   const paths = appPaths();
-  if (!(await isKnownProject(paths, projectPath))) {
-    return ids.map((skillId) => ({ skillId, status: 'error' as const, message: 'Проект не найден в списке' }));
+  const list = parseAgents(agents);
+  const checked = await checkScope(paths, scope);
+  if (!checked) {
+    return list.flatMap((agent) =>
+      ids.map((skillId) => ({ skillId, status: 'error' as const, message: UNKNOWN_SCOPE, agent })),
+    );
   }
   const catalog = await loadCatalog(paths);
-  return installSkills(claudeRoot(paths, projectPath), catalog.skills, ids, { overwrite });
+  const out: InstallResult[] = [];
+  for (const agent of list) {
+    const results = await installSkills(skillsRoot(checked, agent, paths.home), catalog.skills, ids, { overwrite });
+    out.push(...results.map((r) => ({ ...r, agent })));
+  }
+  return out;
+}
+
+export async function listInstalledAction(scope: Scope, agents: AgentId[]): Promise<InstalledSkill[]> {
+  const paths = appPaths();
+  const checked = await checkScope(paths, scope);
+  if (!checked) return [];
+  await purgeTrash(paths.trashDir).catch(() => undefined);
+  const catalog = await loadCatalog(paths);
+  return listInstalled(checked, parseAgents(agents), paths.home, catalog.skills);
+}
+
+export async function removeSkillAction(
+  scope: Scope,
+  agent: AgentId,
+  name: string,
+): Promise<{ ok: true; entry: TrashEntry } | { ok: false; error: string }> {
+  const paths = appPaths();
+  const checked = await checkScope(paths, scope);
+  if (!checked) return { ok: false, error: UNKNOWN_SCOPE };
+  if (agent !== 'claude' && agent !== 'codex') return { ok: false, error: 'Неизвестный агент' };
+  try {
+    return { ok: true, entry: await removeSkill(checked, agent, name, paths.home, paths.trashDir) };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function restoreSkillAction(
+  id: string,
+): Promise<{ ok: true; entry: TrashEntry } | { ok: false; error: string }> {
+  const paths = appPaths();
+  try {
+    const entry = await restoreFromTrash(paths.trashDir, id, {
+      home: paths.home,
+      isAllowedProject: (p) => isKnownProject(paths, p),
+    });
+    return { ok: true, entry };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
 }
 
 export async function addUserSkillAction(
