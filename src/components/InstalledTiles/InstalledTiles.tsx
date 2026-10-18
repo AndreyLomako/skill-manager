@@ -11,7 +11,7 @@ interface Props {
   loading: boolean;
   error?: string;
   onRemove(item: InstalledSkill): void;
-  onUpdate(name: string): void;
+  onUpdate(item: InstalledSkill): void;
   onHover(): void;
 }
 
@@ -56,7 +56,7 @@ export function InstalledTiles({ items, showAgent, loading, error, onRemove, onU
               title={item.title}
               hint={hint}
               {...tileState(item)}
-              onClick={item.kind === 'managed' && item.status === 'outdated' ? () => onUpdate(item.name) : undefined}
+              onClick={item.kind === 'managed' && item.status === 'outdated' ? () => onUpdate(item) : undefined}
               onHover={onHover}
             />
             {item.kind === 'managed' && (

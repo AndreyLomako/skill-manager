@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getInstalled, installSkills, skillTargetDir } from '../../src/core/installer';
 import type { CatalogSkill } from '../../src/core/types';
@@ -63,6 +63,26 @@ describe('installSkills', () => {
       { skillId: 'a', status: 'installed' },
     ]);
     expect(await exists(extra)).toBe(false);
+  });
+
+  it('overwrite с trash переносит старую копию в корзину и ставит новую', async () => {
+    const { root, project, skills, catalog } = await setup();
+    await installSkills(skills, catalog, ['a']);
+    await writeFile(path.join(skills, 'a', 'extra.txt'), 'old');
+    const trashDir = path.join(root, 'trash');
+    expect(
+      await installSkills(skills, catalog, ['a'], {
+        overwrite: true,
+        trash: { dir: trashDir, agent: 'claude', scope: 'project' },
+      }),
+    ).toEqual([{ skillId: 'a', status: 'installed' }]);
+    expect(await exists(path.join(skills, 'a', 'extra.txt'))).toBe(false);
+    expect(await readFile(path.join(project, '.claude', 'skills', 'a', 'ref', 'notes.md'), 'utf8')).toBe('n');
+    const ids = await readdir(trashDir);
+    expect(ids).toHaveLength(1);
+    const entry = JSON.parse(await readFile(path.join(trashDir, ids[0], 'entry.json'), 'utf8'));
+    expect(entry).toMatchObject({ name: 'a', agent: 'claude', scope: 'project', originalPath: path.join(skills, 'a') });
+    expect(await readFile(path.join(trashDir, ids[0], 'skill', 'extra.txt'), 'utf8')).toBe('old');
   });
 
   it('ошибка одного скилла не мешает остальным', async () => {

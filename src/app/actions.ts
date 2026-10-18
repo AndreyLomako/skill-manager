@@ -97,7 +97,10 @@ export async function installSkillsAction(
   const catalog = await loadCatalog(paths);
   const out: InstallResult[] = [];
   for (const agent of list) {
-    const results = await installSkills(skillsRoot(checked, agent, paths.home), catalog.skills, ids, { overwrite });
+    const results = await installSkills(skillsRoot(checked, agent, paths.home), catalog.skills, ids, {
+      overwrite,
+      trash: { dir: paths.trashDir, agent, scope: checked.kind },
+    });
     out.push(...results.map((r) => ({ ...r, agent })));
   }
   return out;

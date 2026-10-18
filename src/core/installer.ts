@@ -2,7 +2,8 @@ import { access, cp, mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { hashDir } from './hash';
 import { isReservedSkillName, isValidSkillName } from './skill-targets';
-import type { CatalogSkill, InstallResult, InstalledState } from './types';
+import { moveToTrash } from './trash';
+import type { AgentId, CatalogSkill, InstallResult, InstalledState } from './types';
 
 const exists = (p: string) => access(p).then(() => true, () => false);
 
@@ -15,7 +16,7 @@ export async function installSkills(
   root: string,
   catalog: CatalogSkill[],
   ids: string[],
-  opts: { overwrite?: boolean } = {},
+  opts: { overwrite?: boolean; trash?: { dir: string; agent: AgentId; scope: 'project' | 'global' } } = {},
 ): Promise<InstallResult[]> {
   const byId = new Map(catalog.map((s) => [s.id, s]));
   const results: InstallResult[] = [];
@@ -30,7 +31,13 @@ export async function installSkills(
           results.push({ skillId: id, status: 'already-installed' });
           continue;
         }
-        await rm(target, { recursive: true, force: true });
+        // С корзиной прежняя версия переносится туда (обратимо), иначе удаляется.
+        if (opts.trash) {
+          const { dir, agent, scope } = opts.trash;
+          await moveToTrash(dir, target, { name: id, agent, scope });
+        } else {
+          await rm(target, { recursive: true, force: true });
+        }
       }
       await mkdir(path.dirname(target), { recursive: true });
       await cp(skill.dir, target, { recursive: true, filter: (src) => path.basename(src) !== '.git' });

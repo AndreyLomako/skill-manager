@@ -72,7 +72,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [updateId, setUpdateId] = useState<string | null>(null);
+  // agent задан — обновление из «Установлено» только для этого агента; null — для текущего выбора агента
+  const [updating, setUpdating] = useState<{ id: string; agent: AgentId | null } | null>(null);
   const [adding, setAdding] = useState(false);
   const [installedList, setInstalledList] = useState<InstalledSkill[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -155,7 +156,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   // агент по умолчанию берётся из источников проекта
   useEffect(() => {
     setInstalled({});
-    setUpdateId(null);
+    setUpdating(null);
     const p = projectsRef.current.projects.find((x) => x.path === activePath);
     setAgentChoice(defaultAgentChoice(p?.sources ?? null));
   }, [activePath]);
@@ -169,7 +170,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
 
   // Диалог обновления относится к конкретному проекту и выбору агента
   useEffect(() => {
-    setUpdateId(null);
+    setUpdating(null);
     setRemoving(null);
   }, [scopeKey, agentChoice]);
 
@@ -210,12 +211,12 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     pulse('select');
   };
 
-  const install = async (ids: string[], overwrite: boolean) => {
+  const install = async (ids: string[], overwrite: boolean, onlyAgent: AgentId | null = null) => {
     if (installing.current || !scope || ids.length === 0) return;
     const targetScope = scope;
     const targetKey = scopeKey;
     const targetChoice = agentChoice;
-    const targetAgents = agentsOf(targetChoice);
+    const targetAgents = onlyAgent ? [onlyAgent] : agentsOf(targetChoice);
     const targetName = targetScope.kind === 'global' ? 'Глобально' : (project?.name ?? '');
     installing.current = true;
     setBusy(true);
@@ -234,9 +235,11 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
               ? 'Установлено глобально'
               : `Установлено в «${targetName}»`,
         lines: results.map((r) => `${titleOf(r.skillId)}${targetChoice === 'both' && r.agent ? ` (${AGENT_LABEL[r.agent]})` : ''} — ${STATUS_TEXT[r.status]}${r.message ? `: ${r.message}` : ''}`),
-        hint: results.some((r) => r.status === 'installed')
-          ? 'Скиллы подхватятся автоматически. Если папки skills раньше не было — выполните /reload-skills в Claude или перезапустите Codex.'
-          : undefined,
+        hint: !results.some((r) => r.status === 'installed')
+          ? undefined
+          : overwrite
+            ? 'Предыдущая версия перенесена в корзину приложения (хранится 30 дней).'
+            : 'Скиллы подхватятся автоматически. Если папки skills раньше не было — выполните /reload-skills в Claude или перезапустите Codex.',
       });
     } catch (e) {
       pulse('error');
@@ -375,7 +378,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
               loading={listLoading}
               error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
               onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
-              onUpdate={setUpdateId}
+              onUpdate={(item) => setUpdating({ id: item.name, agent: item.agent })}
               onHover={hover}
             />
           ) : (
@@ -386,7 +389,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
               installed={mergeInstalled(installed, agentsOf(agentChoice))}
               showAdd={category === MY_SKILLS}
               onToggle={toggle}
-              onUpdate={setUpdateId}
+              onUpdate={(id) => setUpdating({ id, agent: null })}
               onAdd={() => setAdding(true)}
               onHover={hover}
             />
@@ -438,10 +441,10 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         </div>
       )}
 
-      {updateId && scope && (
-        <Dialog title="Обновить скилл?" onClose={() => setUpdateId(null)}>
+      {updating && scope && (
+        <Dialog title="Обновить скилл?" onClose={() => setUpdating(null)}>
           <p className={styles.dialog__text}>
-            «{titleOf(updateId)}» {scope.kind === 'global' ? 'в глобальных скиллах' : `в проекте «${project?.name ?? ''}»`} отличается от версии в каталоге. Установленная копия будет заменена для {agentsOf(agentChoice).map((a) => AGENT_LABEL[a]).join(' и ')}.
+            «{titleOf(updating.id)}» {scope.kind === 'global' ? 'в глобальных скиллах' : `в проекте «${project?.name ?? ''}»`} отличается от версии в каталоге. Установленная копия будет заменена для {(updating.agent ? [updating.agent] : agentsOf(agentChoice)).map((a) => AGENT_LABEL[a]).join(' и ')}; предыдущая версия попадёт в корзину приложения.
           </p>
           <div className={styles.dialog__actions}>
             <Tile
@@ -450,12 +453,12 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
               selected
               disabled={busy}
               onClick={() => {
-                const id = updateId;
-                setUpdateId(null);
-                void install([id], true);
+                const { id, agent } = updating;
+                setUpdating(null);
+                void install([id], true, agent);
               }}
             />
-            <Tile title="Отмена" onClick={() => setUpdateId(null)} />
+            <Tile title="Отмена" onClick={() => setUpdating(null)} />
           </div>
         </Dialog>
       )}
