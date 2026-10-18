@@ -100,7 +100,7 @@ const BAD_TARGET = 'Некорректный путь восстановлени
 export async function restoreFromTrash(
   trashDir: string,
   id: string,
-  opts: { home: string; isAllowedProject: (projectPath: string) => Promise<boolean> },
+  opts: { home: string; isAllowedProject: (projectPath: string) => Promise<boolean>; ops?: FsOps },
 ): Promise<TrashEntry> {
   if (!ID.test(id)) throw new Error('Неверный id корзины');
   const entry = await readEntry(trashDir, id);
@@ -129,12 +129,22 @@ export async function restoreFromTrash(
   }
   if (path.resolve(originalPath).toLowerCase() !== path.resolve(expected).toLowerCase()) throw new Error(BAD_TARGET);
   if (await exists(expected)) throw new Error('На месте уже есть скилл с таким именем');
-  await move(path.join(trashDir, id, SKILL), expected);
+  try {
+    await move(path.join(trashDir, id, SKILL), expected, opts.ops);
+  } catch (e) {
+    // Скилл уже целиком на месте — остаток в корзине не повод сообщать об ошибке.
+    if (!(e instanceof SourceRemovalError)) throw e;
+  }
   await rm(path.join(trashDir, id), { recursive: true, force: true }).catch(() => {});
   return entry;
 }
 
-export async function purgeTrash(trashDir: string, maxAgeMs = 30 * DAY, now = Date.now()): Promise<number> {
+export async function purgeTrash(
+  trashDir: string,
+  maxAgeMs = 30 * DAY,
+  now = Date.now(),
+  ops: Pick<FsOps, 'rm'> = realOps,
+): Promise<number> {
   let names: string[];
   try {
     names = await readdir(trashDir);
@@ -157,7 +167,11 @@ export async function purgeTrash(trashDir: string, maxAgeMs = 30 * DAY, now = Da
       }
     }
     if (stamp >= now - maxAgeMs) continue;
-    await rm(path.join(trashDir, name), { recursive: true, force: true });
+    try {
+      await ops.rm(path.join(trashDir, name), { recursive: true, force: true });
+    } catch {
+      continue; // занятая папка (антивирус/OneDrive) — попробуем в следующий раз
+    }
     removed++;
   }
   return removed;

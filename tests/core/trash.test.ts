@@ -206,6 +206,47 @@ describe('moveToTrash: EXDEV, копирование удалось, удале�
   });
 });
 
+describe('restoreFromTrash: перенос удался, удалить копию в корзине — нет', () => {
+  it('EXDEV + сбой удаления источника — восстановление успешно', async () => {
+    const { home, trash } = await setup();
+    const { cp } = await import('node:fs/promises');
+    const original = path.join(home, '.claude', 'skills', 'pdf');
+    const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);
+    const ops = {
+      rename: async () => {
+        throw Object.assign(new Error('x'), { code: 'EXDEV' });
+      },
+      cp,
+      rm: async () => {
+        throw new Error('EBUSY locked');
+      },
+    };
+    expect(await restoreFromTrash(trash, entry.id, { ...allow(home), ops })).toEqual(entry);
+    expect(await readFile(path.join(original, 'ref', 'a.md'), 'utf8')).toBe('a');
+  });
+});
+
+describe('purgeTrash: сбой удаления одной записи', () => {
+  it('не прерывает чистку остальных', async () => {
+    const { trash } = await setup();
+    const { rm } = await import('node:fs/promises');
+    const now = 10_000_000;
+    const bad = path.join(trash, `${now - 9000}-bad`);
+    const good = path.join(trash, `${now - 8000}-good`);
+    await mkdir(bad, { recursive: true });
+    await mkdir(good, { recursive: true });
+    const ops = {
+      rm: async (p: Parameters<typeof rm>[0], o?: Parameters<typeof rm>[1]) => {
+        if (String(p) === bad) throw new Error('EBUSY locked');
+        return rm(p, o);
+      },
+    };
+    expect(await purgeTrash(trash, 1000, now, ops)).toBe(1);
+    expect(await exists(bad)).toBe(true);
+    expect(await exists(good)).toBe(false);
+  });
+});
+
 describe('restoreFromTrash: канонический путь проекта', () => {
   it('isAllowedProject получает path.resolve без «..»', async () => {
     const { root, home, trash } = await setup();
