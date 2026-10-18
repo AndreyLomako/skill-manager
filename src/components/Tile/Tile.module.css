@@ -51,6 +51,11 @@
   box-shadow: 0 10px 34px rgba(157, 77, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 .tile--selected::before { opacity: 1; }
+.tile--selected:not(.tile--disabled):hover {
+  background: linear-gradient(135deg, rgba(61, 91, 255, 0.3), rgba(157, 77, 255, 0.28));
+  box-shadow: 0 10px 34px rgba(157, 77, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.tile--selected:not(.tile--disabled):hover::before { opacity: 1; }
 
 .tile--disabled { cursor: default; background: rgba(255, 255, 255, 0.035); }
 .tile--disabled .tile__title { color: var(--color-text-dim); }
@@ -75,7 +80,8 @@
   color: var(--color-text-dim);
   transition: max-height 0.35s var(--ease-out), opacity 0.3s;
 }
-.tile:hover .tile__hint { max-height: 54px; opacity: 1; margin-top: 2px; }
+.tile:hover .tile__hint,
+.tile:focus-visible .tile__hint { max-height: 54px; opacity: 1; margin-top: 2px; }
 
 .tile__badge {
   flex: none;
