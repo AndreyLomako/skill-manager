@@ -244,7 +244,9 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     try {
       const results = await installSkillsAction(targetScope, targetAgents, ids, overwrite);
       const failed = results.filter((r) => r.status === 'error');
-      const done = new Set(results.filter((r) => r.status !== 'error').map((r) => r.skillId));
+      // При «Оба» скилл остаётся в выборе, если хотя бы для одного агента установка не удалась
+      const failedIds = new Set(failed.map((r) => r.skillId));
+      const done = new Set(results.filter((r) => !failedIds.has(r.skillId)).map((r) => r.skillId));
       setSelected((sel) => sel.filter((id) => !done.has(id)));
       pulse(failed.length > 0 ? 'error' : 'success');
       setNotice({
@@ -264,7 +266,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       });
     } catch (e) {
       pulse('error');
-      setNotice({ tone: 'error', title: 'Не удалось установить', lines: [(e as Error).message] });
+      setNotice({ tone: 'error', title: 'Не удалось установить', lines: [e instanceof Error ? e.message : String(e)] });
       return;
     } finally {
       installing.current = false;
@@ -294,7 +296,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       });
     } catch (e) {
       pulse('error');
-      setNotice({ tone: 'error', title: 'Не удалось удалить', lines: [(e as Error).message] });
+      setNotice({ tone: 'error', title: 'Не удалось удалить', lines: [e instanceof Error ? e.message : String(e)] });
       return;
     }
     await refreshAfterChange(targetScope, targetKey);
@@ -313,7 +315,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       setNotice({ tone: 'success', title: `Возвращено: ${title}`, lines: [] });
     } catch (e) {
       pulse('error');
-      setNotice({ tone: 'error', title: 'Не удалось вернуть', lines: [(e as Error).message] });
+      setNotice({ tone: 'error', title: 'Не удалось вернуть', lines: [e instanceof Error ? e.message : String(e)] });
       return;
     } finally {
       setNoticeBusy(false);
@@ -335,7 +337,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       }
     } catch (e) {
       pulse('error');
-      setNotice({ tone: 'error', title: 'Каталог не обновлён', lines: [(e as Error).message] });
+      setNotice({ tone: 'error', title: 'Каталог не обновлён', lines: [e instanceof Error ? e.message : String(e)] });
     } finally {
       setRefreshing(false);
     }
