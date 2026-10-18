@@ -85,6 +85,12 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     if (req === installedReq.current) setInstalled(result);
   }, []);
 
+  // Смена проекта: не показываем статусы и диалог обновления от предыдущего проекта
+  useEffect(() => {
+    setInstalled({});
+    setUpdateId(null);
+  }, [activePath]);
+
   useEffect(() => {
     refreshInstalled(activePath).catch(() => undefined);
     return () => {
