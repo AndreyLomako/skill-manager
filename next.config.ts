@@ -17,6 +17,17 @@ const TRACE_EXCLUDES = [
   'electron/**',
   'build/**',
   'tests/**',
+  // Репозиторий и конфиги агентов: трассировка путей в src/core (.git, .codex) иначе тащит их целиком.
+  '.git/**',
+  '.codex/**',
+  '.claude/**',
+  '.agents/**',
+  // Серверу нужны только скомпилированные файлы; каталог приходит из resources/catalog.
+  'src/**',
+  'scripts/**',
+  'catalog/**',
+  'package-lock.json',
+  '*.md',
 ];
 
 const nextConfig: NextConfig = {

@@ -4,14 +4,19 @@ const electron = require('electron');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { resolveRuntime, findFreePort, envWithoutRunAsNode } = require('./paths.cjs');
+const { resolveRuntime, findFreePort, envWithoutRunAsNode, serverEnv } = require('./paths.cjs');
 
 // Запущены как Node (ELECTRON_RUN_AS_NODE=1 из терминала VS Code): require('electron') отдаёт строку.
 // Перезапускаемся как приложение без этой переменной. В собранном exe это отключено фьюзом runAsNode.
 if (typeof electron === 'string' || !electron.app) {
+  // Защита от бесконечного перезапуска, если и без переменной Electron не стал приложением.
+  if (process.env.SKILL_MANAGER_RELAUNCHED) {
+    console.error('Skill Manager: Electron запущен в режиме Node даже без ELECTRON_RUN_AS_NODE.');
+    process.exit(1);
+  }
   require('node:child_process')
     .spawn(process.execPath, process.argv.slice(1), {
-      env: envWithoutRunAsNode(process.env),
+      env: { ...envWithoutRunAsNode(process.env), SKILL_MANAGER_RELAUNCHED: '1' },
       detached: true,
       stdio: 'ignore',
     })
@@ -177,7 +182,8 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
       stdio: 'pipe',
       serviceName: `${APP_NAME} Server`,
       env: {
-        ...process.env,
+        // Без ELECTRON_RUN_AS_NODE / NODE_OPTIONS из «грязного» терминала — они дошли бы до git и других дочерних процессов.
+        ...serverEnv(process.env),
         PORT: String(port),
         HOSTNAME: '127.0.0.1',
         NODE_ENV: 'production',

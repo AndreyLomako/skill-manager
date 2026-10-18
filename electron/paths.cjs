@@ -55,4 +55,12 @@ function envWithoutRunAsNode(env) {
   return copy;
 }
 
-module.exports = { resolveRuntime, findFreePort, envWithoutRunAsNode };
+// Окружение для серверного процесса: без переменных, меняющих поведение Node и самого Electron.
+function serverEnv(env) {
+  const copy = envWithoutRunAsNode(env);
+  delete copy.NODE_OPTIONS;
+  delete copy.SKILL_MANAGER_RELAUNCHED;
+  return copy;
+}
+
+module.exports = { resolveRuntime, findFreePort, envWithoutRunAsNode, serverEnv };
