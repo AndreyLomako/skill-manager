@@ -5,9 +5,10 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { resolveRuntime, findFreePort, envWithoutRunAsNode, serverEnv } = require('./paths.cjs');
+const { startUpdater } = require('./updater.cjs');
 
 // Запущены как Node (ELECTRON_RUN_AS_NODE=1 из терминала VS Code): require('electron') отдаёт строку.
-// Перезапускаемся как приложение без этой переменной. В собранном exe это отключено фьюзом runAsNode.
+// Перезапускаемся как приложение без этой переменной. В собранном приложении это отключено фьюзом runAsNode.
 if (typeof electron === 'string' || !electron.app) {
   // Защита от бесконечного перезапуска, если и без переменной Electron не стал приложением.
   if (process.env.SKILL_MANAGER_RELAUNCHED) {
@@ -24,7 +25,7 @@ if (typeof electron === 'string' || !electron.app) {
   process.exit(0);
 }
 
-const { app, BrowserWindow, dialog, shell, utilityProcess } = electron;
+const { app, BrowserWindow, Menu, dialog, net, shell, utilityProcess } = electron;
 
 const APP_NAME = 'Skill Manager';
 // 4317 занят режимом разработки и `npm run app`: старые вкладки Edge с той версией продолжают
@@ -34,7 +35,8 @@ const PORT_LAST = 4427;
 const SERVER_TIMEOUT_MS = 30_000;
 const BG_COLOR = '#12071f';
 
-// Данные — в %APPDATA%\Skill Manager независимо от имени пакета (и в разработке тоже).
+// Данные — в <appData>/Skill Manager независимо от имени пакета (и в разработке тоже):
+// %APPDATA% на Windows, ~/Library/Application Support на macOS, ~/.config на Linux.
 app.setName(APP_NAME);
 app.setPath('userData', path.join(app.getPath('appData'), APP_NAME));
 
@@ -79,6 +81,21 @@ body{background-image:radial-gradient(ellipse 70% 80% at 20% 85%,rgba(122,30,160
 radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),linear-gradient(120deg,#12071f,#3a1060 45%,#0c1538)}
 </style></head><body>Запуск Skill Manager…</body></html>`;
 
+  // Иконка окна нужна только при запуске из исходников: в установленном приложении Windows берёт её из exe,
+  // Linux — из .desktop-файла, а у окон macOS иконки нет (в доке — иконка бандла).
+  function devWindowIcon() {
+    if (app.isPackaged) return undefined;
+    if (process.platform === 'win32') return path.join(__dirname, '..', 'build', 'icon.ico');
+    if (process.platform === 'linux') return path.join(__dirname, '..', 'build', 'icon.png');
+    return undefined;
+  }
+
+  // macOS: без меню приложения не работают Cmd+Q и Cmd+C/V. На Windows и Linux меню скрыто (autoHideMenuBar).
+  function setupMenu() {
+    if (process.platform !== 'darwin') return;
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]));
+  }
+
   function createWindow(appOrigin) {
     win = new BrowserWindow({
       width: 1280,
@@ -88,8 +105,7 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
       title: APP_NAME,
       backgroundColor: BG_COLOR,
       autoHideMenuBar: true,
-      // В установленном приложении иконку окна Windows берёт из exe.
-      icon: app.isPackaged ? undefined : path.join(__dirname, '..', 'build', 'icon.ico'),
+      icon: devWindowIcon(),
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -150,6 +166,7 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
   }
 
   async function start() {
+    setupMenu();
     const rt = resolveRuntime({
       isPackaged: app.isPackaged,
       resourcesPath: process.resourcesPath,
@@ -204,12 +221,20 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
     });
 
     if (await waitForServer(appUrl)) {
-      win?.loadURL(appUrl);
+      if (!win) return;
+      // Обновления проверяем, когда интерфейс уже открыт: диалогу нужно окно, а запуску проверка не мешает.
+      win
+        .loadURL(appUrl)
+        .catch((e) => log.write(`интерфейс не загрузился: ${e instanceof Error ? e.message : e}\n`))
+        .finally(() => {
+          if (!quitting && !failed) startUpdater({ app, dialog, shell, net, getWindow: () => win, logDir: rt.logDir });
+        });
     } else {
       fail(`Сервер приложения не ответил за ${SERVER_TIMEOUT_MS / 1000} с.`);
     }
   }
 
+  // Закрытие последнего окна завершает приложение на всех ОС, включая macOS: сервер живёт внутри приложения.
   app.on('window-all-closed', () => {
     quitting = true;
     killServer();
