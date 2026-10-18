@@ -29,23 +29,24 @@ async function setup() {
       dir: null, error: 'SKILL.md не найден',
     },
   ];
-  return { root, project: path.join(root, 'project'), catalog };
+  const project = path.join(root, 'project');
+  return { root, project, skills: path.join(project, '.claude', 'skills'), catalog };
 }
 
 describe('skillTargetDir', () => {
   it('строит путь внутри .claude/skills', () => {
-    expect(skillTargetDir('C:\\p', 'a')).toBe(path.join('C:\\p', '.claude', 'skills', 'a'));
+    expect(skillTargetDir('C:\\p\\.claude\\skills', 'a')).toBe(path.join('C:\\p', '.claude', 'skills', 'a'));
   });
 
-  it.each(['..', '../x', 'a/b', 'a\\b', ''])('отклоняет id «%s»', (id) => {
-    expect(() => skillTargetDir('C:\\p', id)).toThrow();
+  it.each(['..', '../x', 'a/b', 'a\\b', '', 'synced', '.trash'])('отклоняет id «%s»', (id) => {
+    expect(() => skillTargetDir('C:\\p\\.claude\\skills', id)).toThrow();
   });
 });
 
 describe('installSkills', () => {
   it('копирует скиллы со вложенными файлами', async () => {
-    const { project, catalog } = await setup();
-    expect(await installSkills(project, catalog, ['a', 'b'])).toEqual([
+    const { project, skills, catalog } = await setup();
+    expect(await installSkills(skills, catalog, ['a', 'b'])).toEqual([
       { skillId: 'a', status: 'installed' },
       { skillId: 'b', status: 'installed' },
     ]);
@@ -53,20 +54,20 @@ describe('installSkills', () => {
   });
 
   it('без overwrite не перезаписывает, с overwrite заменяет целиком', async () => {
-    const { project, catalog } = await setup();
-    await installSkills(project, catalog, ['a']);
+    const { project, skills, catalog } = await setup();
+    await installSkills(skills, catalog, ['a']);
     const extra = path.join(project, '.claude', 'skills', 'a', 'extra.txt');
     await writeFile(extra, 'old');
-    expect(await installSkills(project, catalog, ['a'])).toEqual([{ skillId: 'a', status: 'already-installed' }]);
-    expect(await installSkills(project, catalog, ['a'], { overwrite: true })).toEqual([
+    expect(await installSkills(skills, catalog, ['a'])).toEqual([{ skillId: 'a', status: 'already-installed' }]);
+    expect(await installSkills(skills, catalog, ['a'], { overwrite: true })).toEqual([
       { skillId: 'a', status: 'installed' },
     ]);
     expect(await exists(extra)).toBe(false);
   });
 
   it('ошибка одного скилла не мешает остальным', async () => {
-    const { project, catalog } = await setup();
-    expect(await installSkills(project, catalog, ['nope', 'broken', 'b'])).toEqual([
+    const { skills, catalog } = await setup();
+    expect(await installSkills(skills, catalog, ['nope', 'broken', 'b'])).toEqual([
       { skillId: 'nope', status: 'error', message: 'Скилл не найден в каталоге' },
       { skillId: 'broken', status: 'error', message: 'SKILL.md не найден' },
       { skillId: 'b', status: 'installed' },
@@ -76,25 +77,27 @@ describe('installSkills', () => {
 
 describe('getInstalled', () => {
   it('нет .claude — пусто', async () => {
-    const { project, catalog } = await setup();
-    expect(await getInstalled(project, catalog)).toEqual({});
+    const { skills, catalog } = await setup();
+    expect(await getInstalled(skills, catalog)).toEqual({});
   });
 
   it('up-to-date, outdated и unknown', async () => {
-    const { root, project, catalog } = await setup();
-    await installSkills(project, catalog, ['a', 'b']);
+    const { root, project, skills, catalog } = await setup();
+    await installSkills(skills, catalog, ['a', 'b']);
     await writeFiles(project, {
       '.claude/skills/foreign/SKILL.md': 'x',
       '.claude/skills/not-a-skill/readme.txt': 'x',
+      '.claude/skills/synced/x/SKILL.md': 'x',
+      '.claude/skills/.trash/y/SKILL.md': 'x',
     });
     await writeFile(path.join(root, 'lib', 'b', 'SKILL.md'), '---\nname: B\n---\nновая версия');
-    expect(await getInstalled(project, catalog)).toEqual({ a: 'up-to-date', b: 'outdated', foreign: 'unknown' });
+    expect(await getInstalled(skills, catalog)).toEqual({ a: 'up-to-date', b: 'outdated', foreign: 'unknown' });
   });
 
   it('исчезнувшая папка скилла в каталоге — unknown, остальные считаются', async () => {
-    const { root, project, catalog } = await setup();
-    await installSkills(project, catalog, ['a', 'b']);
+    const { root, skills, catalog } = await setup();
+    await installSkills(skills, catalog, ['a', 'b']);
     await rm(path.join(root, 'lib', 'b'), { recursive: true, force: true });
-    expect(await getInstalled(project, catalog)).toEqual({ a: 'up-to-date', b: 'unknown' });
+    expect(await getInstalled(skills, catalog)).toEqual({ a: 'up-to-date', b: 'unknown' });
   });
 });

@@ -6,6 +6,7 @@ import { CatalogError, loadCatalog } from '@/core/catalog';
 import { getInstalled, installSkills } from '@/core/installer';
 import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
+import { skillsRoot } from '@/core/skill-targets';
 import { ensureSource, sourceCacheDir } from '@/core/sources';
 import type { Catalog, InstallResult, InstalledState, SourceDef } from '@/core/types';
 import { addUserSkill, type NewUserSkill } from '@/core/user-catalog';
@@ -15,6 +16,9 @@ const exists = (p: string) => access(p).then(() => true, () => false);
 export type CatalogResult = { ok: true; catalog: Catalog } | { ok: false; error: string };
 
 const appPaths = () => resolveAppPaths();
+
+const claudeRoot = (paths: AppPaths, projectPath: string) =>
+  skillsRoot({ kind: 'project', path: projectPath }, 'claude', paths.home);
 
 export async function getProjectsAction(): Promise<ProjectsResult> {
   return listProjects(appPaths());
@@ -44,7 +48,7 @@ export async function getInstalledAction(projectPath: string): Promise<Installed
   const paths = appPaths();
   if (!(await isKnownProject(paths, projectPath))) return {};
   const catalog = await loadCatalog(paths);
-  return getInstalled(projectPath, catalog.skills);
+  return getInstalled(claudeRoot(paths, projectPath), catalog.skills);
 }
 
 export async function installSkillsAction(
@@ -57,7 +61,7 @@ export async function installSkillsAction(
     return ids.map((skillId) => ({ skillId, status: 'error' as const, message: 'Проект не найден в списке' }));
   }
   const catalog = await loadCatalog(paths);
-  return installSkills(projectPath, catalog.skills, ids, { overwrite });
+  return installSkills(claudeRoot(paths, projectPath), catalog.skills, ids, { overwrite });
 }
 
 export async function addUserSkillAction(
