@@ -1,0 +1,75 @@
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "header header"
+    "projects main"
+    "cart cart";
+  gap: 16px 28px;
+  height: 100vh;
+  padding: 20px 28px;
+}
+.app__header { grid-area: header; display: flex; align-items: center; justify-content: space-between; }
+.app__logo {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: linear-gradient(90deg, #fff, var(--color-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.app__main { grid-area: main; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.app__errors {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--color-error);
+  background: rgba(255, 107, 138, 0.08);
+  border: 1px solid rgba(255, 107, 138, 0.3);
+}
+
+/* Сцена: круг + кольцо категорий + плитки скиллов */
+.stage {
+  --stage-size: min(72vh, calc(100vw - 520px));
+  --ring-radius: calc(var(--stage-size) * 0.47);
+  position: relative;
+  width: var(--stage-size);
+  height: var(--stage-size);
+}
+
+.notice {
+  position: fixed;
+  right: 28px;
+  bottom: 110px;
+  z-index: 50;
+  width: min(420px, calc(100vw - 56px));
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(20, 16, 50, 0.72);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: notice-in 0.5s var(--ease-out) both;
+}
+.notice--success { border-color: rgba(94, 242, 176, 0.45); }
+.notice--error { border-color: rgba(255, 107, 138, 0.5); }
+.notice__title { display: block; margin-bottom: 8px; }
+.notice__list { display: grid; gap: 4px; font-size: 13px; color: var(--color-text-dim); }
+.notice__hint { margin-top: 10px; font-size: 13px; color: var(--color-success); }
+
+.dialog__text { margin-bottom: 18px; line-height: 1.5; color: var(--color-text-dim); }
+.dialog__actions { display: flex; gap: 10px; }
+
+@keyframes notice-in {
+  from { opacity: 0; translate: 0 16px; }
+  to { opacity: 1; translate: 0 0; }
+}
