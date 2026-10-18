@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "categories": [
+    { "id": "graphics", "title": "Графика", "order": 1 },
+    { "id": "video", "title": "Видео", "order": 2 }
+  ],
+  "sources": [
+    { "id": "samples", "type": "local", "path": "./samples" }
+  ],
+  "skills": [
+    { "id": "sample-palette", "source": "samples", "path": "sample-palette", "category": "graphics" },
+    { "id": "sample-icons", "source": "samples", "path": "sample-icons", "category": "graphics" },
+    { "id": "sample-storyboard", "source": "samples", "path": "sample-storyboard", "category": "video" },
+    { "id": "sample-subtitles", "source": "samples", "path": "sample-subtitles", "category": "video" }
+  ]
+}
