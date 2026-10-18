@@ -86,3 +86,12 @@ export interface TrashEntry {
   originalPath: string;
   deletedAt: number;
 }
+
+export type ProjectSource = 'vscode' | 'claude' | 'codex' | 'manual';
+
+export interface ProjectSignal {
+  path: string;
+  source: ProjectSource;
+  open: boolean;
+  at: number;
+}

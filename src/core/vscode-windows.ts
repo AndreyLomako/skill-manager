@@ -19,6 +19,11 @@ export function normalizeWinPath(p: string): string {
   return /^[a-z]:/.test(n) ? n[0].toUpperCase() + n.slice(1) : n;
 }
 
+// Пути из ~/.claude.json и Codex бывают с прямыми слэшами и маленькой буквой диска.
+export function normalizeProjectPath(p: string): string {
+  return normalizeWinPath(p.replace(/\//g, '\\'));
+}
+
 export function fileUriToPath(uri: string): string | null {
   if (typeof uri !== 'string' || !uri.startsWith('file://')) return null;
   try {
