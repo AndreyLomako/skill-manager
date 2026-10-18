@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { access, readFile } from 'node:fs/promises';
+import { access, mkdir, readFile, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { listTrash, purgeTrash, removeSkill, restoreFromTrash } from '../../src/core/trash';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
@@ -7,6 +7,8 @@ import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 afterEach(cleanupTmp);
 
 const exists = (p: string) => access(p).then(() => true, () => false);
+
+const allow = (home: string) => ({ home, isAllowedProject: async () => true });
 
 async function setup() {
   const root = await tmpDir();
@@ -31,7 +33,7 @@ describe('removeSkill / restoreFromTrash', () => {
     expect(await exists(path.join(trash, entry.id, 'skill', 'ref', 'a.md'))).toBe(true);
     expect((await listTrash(trash)).map((e) => e.id)).toEqual([entry.id]);
 
-    await restoreFromTrash(trash, entry.id);
+    await restoreFromTrash(trash, entry.id, { home, isAllowedProject: async () => true });
     expect(await readFile(path.join(original, 'ref', 'a.md'), 'utf8')).toBe('a');
     expect(await exists(path.join(trash, entry.id))).toBe(false);
   });
@@ -47,7 +49,7 @@ describe('removeSkill / restoreFromTrash', () => {
     const { home, trash } = await setup();
     const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);
     await writeFiles(home, { '.claude/skills/pdf/SKILL.md': 'new' });
-    await expect(restoreFromTrash(trash, entry.id)).rejects.toThrow(/уже есть/);
+    await expect(restoreFromTrash(trash, entry.id, allow(home))).rejects.toThrow(/уже есть/);
   });
 
   it.each(['synced', '../x', 'a/b', '.trash'])('нельзя удалить «%s»', async (name) => {
@@ -58,7 +60,7 @@ describe('removeSkill / restoreFromTrash', () => {
   it('несуществующий скилл и неверный id корзины', async () => {
     const { home, trash } = await setup();
     await expect(removeSkill({ kind: 'global' }, 'claude', 'nope', home, trash)).rejects.toThrow(/не найден/);
-    await expect(restoreFromTrash(trash, '../../evil')).rejects.toThrow(/id/);
+    await expect(restoreFromTrash(trash, '../../evil', allow(home))).rejects.toThrow(/id/);
   });
 });
 
@@ -69,5 +71,108 @@ describe('purgeTrash', () => {
     expect(await purgeTrash(trash, 1000, entry.deletedAt + 500)).toBe(0);
     expect(await purgeTrash(trash, 1000, entry.deletedAt + 5000)).toBe(1);
     expect(await listTrash(trash)).toEqual([]);
+  });
+});
+
+async function tamper(trash: string, id: string, patch: Record<string, unknown>) {
+  const f = path.join(trash, id, 'entry.json');
+  const e = JSON.parse(await readFile(f, 'utf8'));
+  await writeFile(f, JSON.stringify({ ...e, ...patch }), 'utf8');
+}
+
+describe('restoreFromTrash: entry.json не доверяется', () => {
+  it.each([
+    ['synced', 'synced'],
+    ['pdf', 'synced'],
+  ])('originalPath в synced (name=%s) отклоняется', async (name, dirName) => {
+    const { home, trash } = await setup();
+    const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);
+    const target = path.join(home, '.claude', 'skills', dirName);
+    await tamper(trash, entry.id, { name, originalPath: target });
+    await expect(restoreFromTrash(trash, entry.id, allow(home))).rejects.toThrow('Некорректный путь восстановления');
+    expect(await exists(path.join(home, '.claude', 'skills', 'synced', 'SKILL.md'))).toBe(false);
+    expect(await exists(path.join(trash, entry.id, 'skill'))).toBe(true);
+  });
+
+  it('проект не из списка разрешённых отклоняется', async () => {
+    const { root, home, trash } = await setup();
+    const entry = await removeSkill({ kind: 'project', path: path.join(root, 'proj') }, 'codex', 'local', home, trash);
+    await expect(restoreFromTrash(trash, entry.id, { home, isAllowedProject: async () => false })).rejects.toThrow(
+      'Некорректный путь восстановления',
+    );
+    expect(await exists(path.join(root, 'proj', '.agents', 'skills', 'local'))).toBe(false);
+    await restoreFromTrash(trash, entry.id, allow(home));
+    expect(await exists(path.join(root, 'proj', '.agents', 'skills', 'local', 'SKILL.md'))).toBe(true);
+  });
+
+  it('несовпадение agent/name с путём отклоняется', async () => {
+    const { home, trash } = await setup();
+    const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);
+    await tamper(trash, entry.id, { agent: 'codex' });
+    await expect(restoreFromTrash(trash, entry.id, allow(home))).rejects.toThrow('Некорректный путь восстановления');
+    await tamper(trash, entry.id, { agent: 'claude', name: 'other' });
+    await expect(restoreFromTrash(trash, entry.id, allow(home))).rejects.toThrow('Некорректный путь восстановления');
+  });
+
+  it.each([{ id: 'x' }, { agent: 'gemini' }, { scope: 'weird' }, { name: '..' }, { originalPath: 5 }, { originalPath: 'rel/path' }])(
+    'битая запись %j даёт понятную ошибку',
+    async (patch) => {
+      const { home, trash } = await setup();
+      const entry = await removeSkill({ kind: 'global' }, 'claude', 'pdf', home, trash);
+      await tamper(trash, entry.id, patch);
+      const err = await restoreFromTrash(trash, entry.id, allow(home)).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(TypeError);
+    },
+  );
+
+  it('запись без полей — обычная Error', async () => {
+    const { home, trash } = await setup();
+    await mkdir(path.join(trash, '1-abc'), { recursive: true });
+    await writeFile(path.join(trash, '1-abc', 'entry.json'), '{}', 'utf8');
+    const err = await restoreFromTrash(trash, '1-abc', allow(home)).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(TypeError);
+  });
+});
+
+describe('moveToTrash: без потери данных', () => {
+  it('неудачный перенос не оставляет папку корзины', async () => {
+    const { root, home, trash } = await setup();
+    const { moveToTrash } = await import('../../src/core/trash');
+    await expect(
+      moveToTrash(trash, path.join(root, 'nope'), { name: 'nope', agent: 'claude', scope: 'global' }),
+    ).rejects.toThrow();
+    expect(await exists(trash) ? await listDir(trash) : []).toEqual([]);
+    expect(await exists(path.join(home, '.claude', 'skills', 'pdf'))).toBe(true);
+  });
+});
+
+async function listDir(d: string) {
+  return (await import('node:fs/promises')).readdir(d);
+}
+
+describe('purgeTrash: папки без entry.json', () => {
+  it('свежая папка с id переживает чистку, старая удаляется', async () => {
+    const { trash } = await setup();
+    const now = 10_000_000;
+    await mkdir(path.join(trash, `${now - 10}-abc`), { recursive: true });
+    await mkdir(path.join(trash, `${now - 5000}-def`), { recursive: true });
+    expect(await purgeTrash(trash, 1000, now)).toBe(1);
+    expect(await exists(path.join(trash, `${now - 10}-abc`))).toBe(true);
+    expect(await exists(path.join(trash, `${now - 5000}-def`))).toBe(false);
+  });
+
+  it('не-id папки судятся по mtime', async () => {
+    const { trash } = await setup();
+    const fresh = path.join(trash, 'fresh');
+    const old = path.join(trash, 'old');
+    await mkdir(fresh, { recursive: true });
+    await mkdir(old, { recursive: true });
+    const now = Date.now();
+    await utimes(old, new Date(now - 100_000), new Date(now - 100_000));
+    expect(await purgeTrash(trash, 50_000, now)).toBe(1);
+    expect(await exists(fresh)).toBe(true);
+    expect(await exists(old)).toBe(false);
   });
 });

@@ -32,7 +32,7 @@ export function mergeInstalled(
   if (agents.length === 0) return out;
   const ids = new Set(agents.flatMap((a) => Object.keys(states[a] ?? {})));
   for (const id of ids) {
-    const list = agents.map((a) => states[a]?.[id]);
+    const list = agents.map((a) => (Object.hasOwn(states[a] ?? {}, id) ? states[a]?.[id] : undefined));
     if (list.some((s) => s === undefined)) continue;
     const all = list as InstalledStatus[];
     out[id] = all.every((s) => s === 'up-to-date') ? 'up-to-date' : all.includes('outdated') ? 'outdated' : 'unknown';

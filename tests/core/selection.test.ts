@@ -71,6 +71,11 @@ describe('агенты', () => {
     expect(mergeInstalled({}, ['codex'])).toEqual({});
   });
 
+  it('mergeInstalled не берёт унаследованные свойства (constructor)', () => {
+    const states = { claude: { constructor: 'up-to-date' } as const, codex: {} };
+    expect(mergeInstalled(states, ['claude', 'codex'])).toEqual({});
+  });
+
   it('sourcesLabel', () => {
     expect(sourcesLabel(['vscode', 'claude', 'codex', 'manual'])).toBe('VS Code · Claude · Codex · вручную');
     expect(sourcesLabel([])).toBe('');

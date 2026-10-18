@@ -1,7 +1,7 @@
-import { access, cp, mkdir, readdir, readFile, rename, rm } from 'node:fs/promises';
+import { access, cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { writeJsonAtomic } from './json-file';
+import { renameWithRetry, writeJsonAtomic } from './json-file';
 import { isValidSkillName, skillsRoot } from './skill-targets';
 import type { AgentId, Scope, TrashEntry } from './types';
 
@@ -14,7 +14,7 @@ const exists = (p: string) => access(p).then(() => true, () => false);
 async function move(from: string, to: string): Promise<void> {
   await mkdir(path.dirname(to), { recursive: true });
   try {
-    await rename(from, to);
+    await renameWithRetry(from, to);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
     await cp(from, to, { recursive: true });
@@ -30,8 +30,14 @@ export async function moveToTrash(
 ): Promise<TrashEntry> {
   const id = `${now}-${randomBytes(4).toString('hex').slice(0, 6)}`;
   const entry: TrashEntry = { id, ...meta, originalPath: path.resolve(dir), deletedAt: now };
-  await move(dir, path.join(trashDir, id, SKILL));
+  // Сначала запись, потом перенос: при сбое переноса скилл остаётся на месте, корзину чистим.
   await writeJsonAtomic(path.join(trashDir, id, ENTRY), entry);
+  try {
+    await move(dir, path.join(trashDir, id, SKILL));
+  } catch (e) {
+    await rm(path.join(trashDir, id), { recursive: true, force: true }).catch(() => {});
+    throw e;
+  }
   return entry;
 }
 
@@ -58,14 +64,40 @@ export async function listTrash(trashDir: string): Promise<TrashEntry[]> {
   return out.sort((a, b) => b.deletedAt - a.deletedAt);
 }
 
-export async function restoreFromTrash(trashDir: string, id: string): Promise<TrashEntry> {
+const BAD_TARGET = 'Некорректный путь восстановления';
+
+export async function restoreFromTrash(
+  trashDir: string,
+  id: string,
+  opts: { home: string; isAllowedProject: (projectPath: string) => Promise<boolean> },
+): Promise<TrashEntry> {
   if (!ID.test(id)) throw new Error('Неверный id корзины');
   const entry = await readEntry(trashDir, id);
-  if (!entry) throw new Error('Запись в корзине не найдена');
-  if (path.basename(path.dirname(entry.originalPath)) !== 'skills') throw new Error('Некорректный путь восстановления');
-  if (await exists(entry.originalPath)) throw new Error('На месте уже есть скилл с таким именем');
-  await move(path.join(trashDir, id, SKILL), entry.originalPath);
-  await rm(path.join(trashDir, id), { recursive: true, force: true });
+  if (!entry || typeof entry !== 'object') throw new Error('Запись в корзине не найдена');
+  const { agent, scope, name, originalPath } = entry;
+  if (
+    entry.id !== id ||
+    (agent !== 'claude' && agent !== 'codex') ||
+    (scope !== 'project' && scope !== 'global') ||
+    typeof name !== 'string' ||
+    !isValidSkillName(name) ||
+    typeof originalPath !== 'string' ||
+    !path.isAbsolute(originalPath)
+  ) {
+    throw new Error(BAD_TARGET);
+  }
+  let expected: string;
+  if (scope === 'global') {
+    expected = path.join(skillsRoot({ kind: 'global' }, agent, opts.home), name);
+  } else {
+    const projectPath = path.dirname(path.dirname(path.dirname(originalPath)));
+    if (!(await opts.isAllowedProject(projectPath))) throw new Error(BAD_TARGET);
+    expected = path.join(skillsRoot({ kind: 'project', path: projectPath }, agent, opts.home), name);
+  }
+  if (path.resolve(originalPath).toLowerCase() !== path.resolve(expected).toLowerCase()) throw new Error(BAD_TARGET);
+  if (await exists(expected)) throw new Error('На месте уже есть скилл с таким именем');
+  await move(path.join(trashDir, id, SKILL), expected);
+  await rm(path.join(trashDir, id), { recursive: true, force: true }).catch(() => {});
   return entry;
 }
 
@@ -79,7 +111,19 @@ export async function purgeTrash(trashDir: string, maxAgeMs = 30 * DAY, now = Da
   let removed = 0;
   for (const name of names) {
     const entry = ID.test(name) ? await readEntry(trashDir, name) : null;
-    if (entry && entry.deletedAt >= now - maxAgeMs) continue;
+    let stamp: number | null = entry ? entry.deletedAt : null;
+    if (typeof stamp !== 'number' || Number.isNaN(stamp)) {
+      const prefix = /^(\d+)-/.exec(name);
+      stamp = prefix ? Number(prefix[1]) : null;
+      if (stamp === null) {
+        try {
+          stamp = (await stat(path.join(trashDir, name))).mtimeMs;
+        } catch {
+          continue;
+        }
+      }
+    }
+    if (stamp >= now - maxAgeMs) continue;
     await rm(path.join(trashDir, name), { recursive: true, force: true });
     removed++;
   }
