@@ -11,8 +11,13 @@
     "app": "node scripts/launch.mjs",
     "test": "vitest run",
     "probe": "node scripts/probe-vscode.mjs",
-    "electron:dev": "node scripts/prepare-standalone.mjs clean && next build && node scripts/prepare-standalone.mjs && node scripts/electron-dev.mjs",
-    "dist": "node scripts/prepare-standalone.mjs clean && next build && node scripts/prepare-standalone.mjs && electron-builder --win nsis --x64"
+    "build:app": "node scripts/prepare-standalone.mjs clean && next build && node scripts/prepare-standalone.mjs",
+    "electron:dev": "npm run build:app && node scripts/electron-dev.mjs",
+    "dist": "npm run build:app && electron-builder --publish never",
+    "dist:win": "npm run build:app && electron-builder --win --publish never",
+    "dist:mac": "npm run build:app && electron-builder --mac --publish never",
+    "dist:linux": "npm run build:app && electron-builder --linux --publish never",
+    "release": "npm run build:app && electron-builder --publish always"
   },
   "dependencies": {
     "electron-updater": "^6.8.10"
@@ -74,14 +79,42 @@
       "createStartMenuShortcut": true,
       "runAfterFinish": true
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.png",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "build/icon.png",
+      "maintainer": "Andrey Lomako",
+      "synopsis": "Установка скиллов Claude Code и Codex в проекты"
+    },
     "electronFuses": {
       "runAsNode": false,
       "enableNodeOptionsEnvironmentVariable": false,
       "enableNodeCliInspectArguments": false,
-      "enableCookieEncryption": true
+      "enableCookieEncryption": true,
+      "resetAdHocDarwinSignature": true
     },
-    "publish": null
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AndreyLomako",
+        "repo": "skill-manager",
+        "releaseType": "release"
+      }
+    ]
   },
   "description": "Установка скиллов Claude Code и Codex в проекты",
-  "author": "Andrey Lomako"
+  "author": "Andrey Lomako",
+  "homepage": "https://github.com/AndreyLomako/skill-manager"
 }
