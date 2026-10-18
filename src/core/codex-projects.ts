@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { ProjectSignal } from './types';
 import { normalizeProjectPath } from './vscode-windows';
 
@@ -24,7 +26,11 @@ export async function findCodexStateDb(home: string): Promise<string | null> {
 
 function readThreads(file: string, limit: number): Array<{ cwd: string; at: number }> {
   const { DatabaseSync } = process.getBuiltinModule('node:sqlite') as Sqlite;
-  const db = new DatabaseSync(file, { readOnly: true });
+  // With no -wal/-shm present, a readOnly open of a WAL db still creates them; immutable=1 does not.
+  const sideFiles = existsSync(`${file}-wal`) || existsSync(`${file}-shm`);
+  const db = sideFiles
+    ? new DatabaseSync(file, { readOnly: true })
+    : new DatabaseSync(`${pathToFileURL(file).href}?immutable=1`, { readOnly: true });
   try {
     const cols = new Set(
       (db.prepare('pragma table_info(threads)').all() as Array<{ name: string }>).map((c) => c.name),

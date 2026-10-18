@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { findCodexStateDb, readCodexProjects } from '../../src/core/codex-projects';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
@@ -53,6 +53,23 @@ describe('readCodexProjects', () => {
     expect(await readCodexProjects(home, async () => false)).toEqual([
       { path: 'C:\\x', source: 'codex', open: false, at: 7000 },
     ]);
+  });
+
+  it('WAL-база без -wal/-shm читается, не создавая файлов в ~/.codex', async () => {
+    const home = await tmpDir();
+    await mkdir(path.join(home, '.codex'), { recursive: true });
+    const file = path.join(home, '.codex', 'state_3.sqlite');
+    const db = new DatabaseSync(file);
+    db.exec('pragma journal_mode=wal');
+    db.exec('create table threads (cwd text, recency_at_ms integer)');
+    db.prepare('insert into threads values (?, ?)').run('c:\\work\\w', 42);
+    db.close();
+    await rm(`${file}-wal`, { force: true });
+    await rm(`${file}-shm`, { force: true });
+    expect(await readCodexProjects(home, async () => false)).toEqual([
+      { path: 'C:\\work\\w', source: 'codex', open: false, at: 42 },
+    ]);
+    expect((await readdir(path.join(home, '.codex'))).sort()).toEqual(['state_3.sqlite']);
   });
 
   it('нет таблицы/колонки cwd или нет базы — пусто', async () => {
