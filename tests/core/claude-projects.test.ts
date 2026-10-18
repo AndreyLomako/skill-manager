@@ -80,7 +80,7 @@ describe.each(['darwin', 'linux'] as const)('posix (%s)', (platform) => {
     const home = await tmpDir();
     await writeFiles(home, {
       '.claude.json': JSON.stringify({
-        projects: { '/home/u/a/': {}, '/Users/u/B': {}, 'relative/dir': {}, x: {}, 'C:\win': {}, '  ': {} },
+        projects: { '/home/u/a/': {}, '/Users/u/B': {}, 'relative/dir': {}, x: {}, 'C:\\win': {}, '  ': {} },
       }),
     });
     expect((await readClaudeRecent(home, platform)).map((p) => p.path)).toEqual(['/home/u/a', '/Users/u/B']);

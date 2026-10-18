@@ -103,7 +103,7 @@ describe.each(['darwin', 'linux'] as const)('posix (%s)', (platform) => {
   it('normalizeProjectPath: posix.normalize, без хвостового / (кроме корня), обратные слэши не трогает', () => {
     expect(normalizeProjectPath('/home/u//a/../b/', platform)).toBe('/home/u/b');
     expect(normalizeProjectPath('/', platform)).toBe('/');
-    expect(normalizeProjectPath('/home/u/a\b', platform)).toBe('/home/u/a\b');
+    expect(normalizeProjectPath('/home/u/a\\b', platform)).toBe('/home/u/a\\b');
     expect(normalizeProjectPath('/Users/U/App', platform)).toBe('/Users/U/App');
   });
 
