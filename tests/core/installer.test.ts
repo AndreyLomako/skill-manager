@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { getInstalled, installSkills, skillTargetDir } from '../../src/core/installer';
 import type { CatalogSkill } from '../../src/core/types';
@@ -89,5 +89,12 @@ describe('getInstalled', () => {
     });
     await writeFile(path.join(root, 'lib', 'b', 'SKILL.md'), '---\nname: B\n---\nновая версия');
     expect(await getInstalled(project, catalog)).toEqual({ a: 'up-to-date', b: 'outdated', foreign: 'unknown' });
+  });
+
+  it('исчезнувшая папка скилла в каталоге — unknown, остальные считаются', async () => {
+    const { root, project, catalog } = await setup();
+    await installSkills(project, catalog, ['a', 'b']);
+    await rm(path.join(root, 'lib', 'b'), { recursive: true, force: true });
+    expect(await getInstalled(project, catalog)).toEqual({ a: 'up-to-date', b: 'unknown' });
   });
 });

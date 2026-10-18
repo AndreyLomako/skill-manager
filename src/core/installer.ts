@@ -65,7 +65,11 @@ export async function getInstalled(projectPath: string, catalog: CatalogSkill[])
       state[name] = 'unknown';
       continue;
     }
-    state[name] = (await hashDir(skill.dir)) === (await hashDir(dir)) ? 'up-to-date' : 'outdated';
+    try {
+      state[name] = (await hashDir(skill.dir)) === (await hashDir(dir)) ? 'up-to-date' : 'outdated';
+    } catch {
+      state[name] = 'unknown';
+    }
   }
   return state;
 }
