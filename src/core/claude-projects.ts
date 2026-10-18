@@ -1,5 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathApi } from './platform';
 import type { ProjectSignal } from './types';
 import { normalizeProjectPath } from './vscode-windows';
 
@@ -17,6 +18,7 @@ export function pidAlive(pid: number): boolean {
 export async function readClaudeSessions(
   home: string,
   alive: (pid: number) => boolean = pidAlive,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<ProjectSignal[]> {
   const dir = path.join(home, '.claude', 'sessions');
   let names: string[];
@@ -32,7 +34,7 @@ export async function readClaudeSessions(
       if (typeof j?.pid !== 'number' || typeof j?.cwd !== 'string' || !j.cwd) continue;
       if (!alive(j.pid)) continue;
       out.push({
-        path: normalizeProjectPath(j.cwd),
+        path: normalizeProjectPath(j.cwd, platform),
         source: 'claude',
         open: true,
         at: typeof j.startedAt === 'number' ? j.startedAt : 0,
@@ -44,14 +46,14 @@ export async function readClaudeSessions(
   return out.sort((a, b) => b.at - a.at);
 }
 
-export async function readClaudeRecent(home: string): Promise<ProjectSignal[]> {
+export async function readClaudeRecent(home: string, platform: NodeJS.Platform = process.platform): Promise<ProjectSignal[]> {
   try {
     const j = JSON.parse(await readFile(path.join(home, '.claude.json'), 'utf8'));
     const projects = j?.projects && typeof j.projects === 'object' ? Object.keys(j.projects) : [];
     return projects
       .filter((p) => p.trim())
-      .map((p) => normalizeProjectPath(p))
-      .filter((p) => path.win32.isAbsolute(p))
+      .map((p) => normalizeProjectPath(p, platform))
+      .filter((p) => pathApi(platform).isAbsolute(p))
       .map((p) => ({ path: p, source: 'claude' as const, open: false, at: 0 }));
   } catch {
     return [];

@@ -34,7 +34,8 @@ async function setup() {
 }
 
 describe('skillTargetDir', () => {
-  it('строит путь внутри .claude/skills', () => {
+  // Windows-only: «C:\\…» нативный path на posix считает относительным именем.
+  it.runIf(process.platform === 'win32')('строит путь внутри .claude/skills', () => {
     expect(skillTargetDir('C:\\p\\.claude\\skills', 'a')).toBe(path.join('C:\\p', '.claude', 'skills', 'a'));
   });
 

@@ -16,7 +16,7 @@ describe('readClaudeSessions', () => {
       '.claude/sessions/200.abc.key': 'x',
     });
     const alive = (pid: number) => pid !== 300;
-    expect(await readClaudeSessions(home, alive)).toEqual([
+    expect(await readClaudeSessions(home, alive, 'win32')).toEqual([
       { path: 'C:\\work\\new', source: 'claude', open: true, at: 2000 },
       { path: 'C:\\work\\old', source: 'claude', open: true, at: 1000 },
     ]);
@@ -33,7 +33,7 @@ describe('readClaudeRecent', () => {
     await writeFiles(home, {
       '.claude.json': JSON.stringify({ projects: { 'c:/Users/me/a': {}, 'C:\\Users\\me\\b': {} } }),
     });
-    expect(await readClaudeRecent(home)).toEqual([
+    expect(await readClaudeRecent(home, 'win32')).toEqual([
       { path: 'C:\\Users\\me\\a', source: 'claude', open: false, at: 0 },
       { path: 'C:\\Users\\me\\b', source: 'claude', open: false, at: 0 },
     ]);
@@ -44,7 +44,7 @@ describe('readClaudeRecent', () => {
     await writeFiles(home, {
       '.claude.json': JSON.stringify({ projects: { 'relative/dir': {}, x: {}, 'C:\\ok': {} } }),
     });
-    expect((await readClaudeRecent(home)).map((p) => p.path)).toEqual(['C:\\ok']);
+    expect((await readClaudeRecent(home, 'win32')).map((p) => p.path)).toEqual(['C:\\ok']);
   });
 
   it('нет файла или битый — пусто', async () => {
@@ -60,5 +60,29 @@ describe('pidAlive', () => {
     expect(pidAlive(process.pid)).toBe(true);
     expect(pidAlive(0)).toBe(false);
     expect(pidAlive(-5)).toBe(false);
+  });
+});
+
+describe.each(['darwin', 'linux'] as const)('posix (%s)', (platform) => {
+  it('readClaudeSessions: нормализует posix cwd', async () => {
+    const home = await tmpDir();
+    await writeFiles(home, {
+      '.claude/sessions/1.json': JSON.stringify({ pid: 1, cwd: '/home/u/a/', startedAt: 10 }),
+      '.claude/sessions/2.json': JSON.stringify({ pid: 2, cwd: '/home/u//b', startedAt: 20 }),
+    });
+    expect(await readClaudeSessions(home, () => true, platform)).toEqual([
+      { path: '/home/u/b', source: 'claude', open: true, at: 20 },
+      { path: '/home/u/a', source: 'claude', open: true, at: 10 },
+    ]);
+  });
+
+  it('readClaudeRecent: абсолютные posix-ключи, относительные отбрасываются', async () => {
+    const home = await tmpDir();
+    await writeFiles(home, {
+      '.claude.json': JSON.stringify({
+        projects: { '/home/u/a/': {}, '/Users/u/B': {}, 'relative/dir': {}, x: {}, 'C:\win': {}, '  ': {} },
+      }),
+    });
+    expect((await readClaudeRecent(home, platform)).map((p) => p.path)).toEqual(['/home/u/a', '/Users/u/B']);
   });
 });

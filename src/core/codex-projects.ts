@@ -1,9 +1,9 @@
-import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ProjectSignal } from './types';
+import { isProcessRunning, type RunFn } from './platform';
 import { normalizeProjectPath } from './vscode-windows';
 
 type Sqlite = typeof import('node:sqlite');
@@ -53,8 +53,9 @@ function readThreads(file: string, limit: number): Array<{ cwd: string; at: numb
 
 export async function readCodexProjects(
   home: string,
-  running: () => Promise<boolean> = isCodexRunning,
+  running?: () => Promise<boolean>,
   limit = 20,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<ProjectSignal[]> {
   const file = await findCodexStateDb(home);
   if (!file) return [];
@@ -65,19 +66,15 @@ export async function readCodexProjects(
     return [];
   }
   if (rows.length === 0) return [];
-  const isRunning = await running();
+  const isRunning = await (running ?? (() => isCodexRunning(platform)))();
   return rows.map((r, i) => ({
-    path: normalizeProjectPath(r.cwd),
+    path: normalizeProjectPath(r.cwd, platform),
     source: 'codex' as const,
     open: isRunning && i === 0,
     at: r.at,
   }));
 }
 
-export function isCodexRunning(): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile('tasklist', ['/FI', 'IMAGENAME eq codex.exe', '/NH'], { windowsHide: true }, (err, stdout) =>
-      resolve(!err && /codex\.exe/i.test(String(stdout))),
-    );
-  });
+export function isCodexRunning(platform: NodeJS.Platform = process.platform, run?: RunFn): Promise<boolean> {
+  return isProcessRunning({ win32: 'codex.exe', darwin: 'codex', linux: 'codex' }, platform, run);
 }

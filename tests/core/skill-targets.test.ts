@@ -8,7 +8,8 @@ import {
   skillsRoot,
 } from '../../src/core/skill-targets';
 
-describe('isForbiddenProjectRoot', () => {
+// Windows-only: C:\\-пути и сравнение без учёта регистра зависят от нативного path.
+describe.runIf(process.platform === 'win32')('isForbiddenProjectRoot', () => {
   it.each([
     'C:\\home\\.codex',
     'C:\\home\\.codex\\sub',

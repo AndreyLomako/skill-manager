@@ -1,7 +1,7 @@
-import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isProcessRunning, pathApi, pathKey, type RunFn } from './platform';
 
 export interface VsCodeWindows {
   open: string[];
@@ -20,7 +20,11 @@ export function normalizeWinPath(p: string): string {
 }
 
 // Пути из ~/.claude.json и Codex бывают с прямыми слэшами и маленькой буквой диска.
-export function normalizeProjectPath(p: string): string {
+export function normalizeProjectPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform !== 'win32') {
+    const n = path.posix.normalize(p);
+    return n.length > 1 ? n.replace(/\/+$/, '') || '/' : n;
+  }
   const n = normalizeWinPath(
     p
       .replace(/\//g, '\\')
@@ -30,10 +34,10 @@ export function normalizeProjectPath(p: string): string {
   return /^[A-Za-z]:\\$/.test(n) ? n : n.replace(/\\+$/, '');
 }
 
-export function fileUriToPath(uri: string): string | null {
+export function fileUriToPath(uri: string, platform: NodeJS.Platform = process.platform): string | null {
   if (typeof uri !== 'string' || !uri.startsWith('file://')) return null;
   try {
-    return normalizeProjectPath(fileURLToPath(uri, { windows: true }));
+    return normalizeProjectPath(fileURLToPath(uri, { windows: platform === 'win32' }), platform);
   } catch {
     return null;
   }
@@ -48,19 +52,22 @@ function stripJsonc(text: string): string {
     .replace(/,\s*([}\]])/g, '$1');
 }
 
-async function workspaceFolders(configUri: string): Promise<string[]> {
-  const file = fileUriToPath(configUri);
+async function workspaceFolders(configUri: string, platform: NodeJS.Platform): Promise<string[]> {
+  const file = fileUriToPath(configUri, platform);
   if (!file) return [];
   try {
     const json = JSON.parse(stripJsonc(await readFile(/*turbopackIgnore: true*/ file, 'utf8')));
-    const dir = path.win32.dirname(file);
+    const api = pathApi(platform);
+    const dir = api.dirname(file);
     const folders: Array<{ path?: unknown; uri?: unknown }> = Array.isArray(json.folders) ? json.folders : [];
     return folders
       .map((f) =>
         typeof f.path === 'string'
-          ? normalizeWinPath(path.win32.resolve(dir, f.path))
+          ? platform === 'win32'
+            ? normalizeWinPath(api.resolve(dir, f.path))
+            : normalizeProjectPath(api.resolve(dir, f.path), platform)
           : typeof f.uri === 'string'
-            ? fileUriToPath(f.uri)
+            ? fileUriToPath(f.uri, platform)
             : null,
       )
       .filter((p): p is string => p !== null);
@@ -69,18 +76,21 @@ async function workspaceFolders(configUri: string): Promise<string[]> {
   }
 }
 
-async function windowFolders(w: RawWindow): Promise<string[]> {
+async function windowFolders(w: RawWindow, platform: NodeJS.Platform): Promise<string[]> {
   if (typeof w.folder === 'string') {
-    const p = fileUriToPath(w.folder);
+    const p = fileUriToPath(w.folder, platform);
     return p ? [p] : [];
   }
   if (w.workspace && typeof w.workspace.configPath === 'string') {
-    return workspaceFolders(w.workspace.configPath);
+    return workspaceFolders(w.workspace.configPath, platform);
   }
   return [];
 }
 
-export async function readOpenWindows(storagePath: string): Promise<VsCodeWindows> {
+export async function readOpenWindows(
+  storagePath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<VsCodeWindows> {
   let state: { openedWindows?: unknown; lastActiveWindow?: unknown };
   try {
     state = JSON.parse(await readFile(storagePath, 'utf8'))?.windowsState ?? {};
@@ -92,27 +102,20 @@ export async function readOpenWindows(storagePath: string): Promise<VsCodeWindow
   const seen = new Set<string>();
   const open: string[] = [];
   for (const w of last ? [...windows, last] : windows) {
-    for (const p of await windowFolders(w)) {
-      const key = p.toLowerCase();
+    for (const p of await windowFolders(w, platform)) {
+      const key = pathKey(p, platform);
       if (!seen.has(key)) {
         seen.add(key);
         open.push(p);
       }
     }
   }
-  const active = last ? ((await windowFolders(last))[0] ?? null) : null;
+  const active = last ? ((await windowFolders(last, platform))[0] ?? null) : null;
   return { open, active };
 }
 
 // storage.json хранит окна и после закрытия VS Code (для восстановления сессии),
-// поэтому «открыто» имеет смысл, только если процесс Code.exe запущен.
-export function isVsCodeRunning(): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile(
-      'tasklist',
-      ['/FI', 'IMAGENAME eq Code.exe', '/NH'],
-      { windowsHide: true },
-      (err, stdout) => resolve(!err && /Code\.exe/i.test(String(stdout))),
-    );
-  });
+// поэтому «открыто» имеет смысл, только если процесс VS Code запущен.
+export function isVsCodeRunning(platform: NodeJS.Platform = process.platform, run?: RunFn): Promise<boolean> {
+  return isProcessRunning({ win32: 'Code.exe', darwin: 'Code', linux: 'code' }, platform, run);
 }

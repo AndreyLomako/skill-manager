@@ -4,6 +4,7 @@ import { writeJsonAtomic } from './json-file';
 import type { AppPaths } from './paths';
 import { pidAlive as defaultPidAlive, readClaudeRecent, readClaudeSessions } from './claude-projects';
 import { isCodexRunning, readCodexProjects } from './codex-projects';
+import { pathApi, pathKey } from './platform';
 import type { Project, ProjectSignal, ProjectSource } from './types';
 import { isVsCodeRunning, readOpenWindows, type VsCodeWindows } from './vscode-windows';
 
@@ -19,12 +20,10 @@ export interface ProjectsResult {
 
 const MAX_RECENT = 20;
 const SETTINGS_FILE = 'settings.json';
-const key = (p: string) => p.toLowerCase();
-
-function uniq(list: string[]): string[] {
+function uniq(list: string[], platform: NodeJS.Platform): string[] {
   const seen = new Set<string>();
   return list.filter((p) => {
-    const k = key(p);
+    const k = pathKey(p, platform);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
@@ -58,15 +57,17 @@ export async function saveSettings(userDir: string, s: Settings): Promise<void> 
 }
 
 // Уже записанное написание пути сохраняется: иначе смена регистра в сигналах переписывала бы recent.
-export function rememberOpen(s: Settings, open: string[]): Settings {
+export function rememberOpen(s: Settings, open: string[], platform: NodeJS.Platform = process.platform): Settings {
+  const key = (p: string) => pathKey(p, platform);
   const stored = new Map(s.recent.map((p) => [key(p), p]));
-  return { ...s, recent: uniq([...open.map((p) => stored.get(key(p)) ?? p), ...s.recent]).slice(0, MAX_RECENT) };
+  return { ...s, recent: uniq([...open.map((p) => stored.get(key(p)) ?? p), ...s.recent], platform).slice(0, MAX_RECENT) };
 }
 
 export interface ProjectDeps {
   vscodeRunning?: () => Promise<boolean>;
   pidAlive?: (pid: number) => boolean;
   codexRunning?: () => Promise<boolean>;
+  platform?: NodeJS.Platform;
 }
 
 const SOURCE_ORDER: ProjectSource[] = ['vscode', 'claude', 'codex', 'manual'];
@@ -82,10 +83,29 @@ export function memoizeFor<T>(ms: number, fn: () => Promise<T>): () => Promise<T
 }
 
 const PROCESS_CHECK_TTL_MS = 5000;
-const defaultVsCodeRunning = memoizeFor(PROCESS_CHECK_TTL_MS, isVsCodeRunning);
-const defaultCodexRunning = memoizeFor(PROCESS_CHECK_TTL_MS, isCodexRunning);
+const defaultVsCodeRunning = new Map<NodeJS.Platform, () => Promise<boolean>>();
+const defaultCodexRunning = new Map<NodeJS.Platform, () => Promise<boolean>>();
 
-export function mergeSignals(signals: ProjectSignal[], activePath: string | null, s: Settings): Project[] {
+function memoizedFor(
+  cache: Map<NodeJS.Platform, () => Promise<boolean>>,
+  platform: NodeJS.Platform,
+  check: (platform: NodeJS.Platform) => Promise<boolean>,
+): () => Promise<boolean> {
+  let fn = cache.get(platform);
+  if (!fn) {
+    fn = memoizeFor(PROCESS_CHECK_TTL_MS, () => check(platform));
+    cache.set(platform, fn);
+  }
+  return fn;
+}
+
+export function mergeSignals(
+  signals: ProjectSignal[],
+  activePath: string | null,
+  s: Settings,
+  platform: NodeJS.Platform = process.platform,
+): Project[] {
+  const key = (p: string) => pathKey(p, platform);
   const activeKey = activePath ? key(activePath) : null;
   const vscodeOpen = signals.filter((x) => x.open && x.source === 'vscode');
   const otherOpen = signals.filter((x) => x.open && x.source !== 'vscode').sort((a, b) => b.at - a.at);
@@ -95,7 +115,7 @@ export function mergeSignals(signals: ProjectSignal[], activePath: string | null
     ...[...vscodeOpen, ...otherOpen, ...closed].map((x) => x.path),
     ...s.recent,
     ...s.manual,
-  ]);
+  ], platform);
   const manualKeys = new Set(s.manual.map(key));
   // Показываемый путь не должен меняться от порядка/регистра сигналов: сначала написание из settings.
   const stored = new Map<string, string>();
@@ -107,7 +127,7 @@ export function mergeSignals(signals: ProjectSignal[], activePath: string | null
     const shown = stored.get(key(p)) ?? mine[0]?.path ?? p;
     return {
       path: shown,
-      name: path.win32.basename(shown) || shown,
+      name: pathApi(platform).basename(shown) || shown,
       open: mine.some((x) => x.open),
       active: key(p) === activeKey,
       sources: SOURCE_ORDER.filter((src) => found.has(src)),
@@ -116,13 +136,19 @@ export function mergeSignals(signals: ProjectSignal[], activePath: string | null
 }
 
 export async function listProjects(paths: AppPaths, deps: ProjectDeps = {}): Promise<ProjectsResult> {
-  const raw = await readOpenWindows(paths.vscodeStorage);
-  const vscodeUp = await (deps.vscodeRunning ?? defaultVsCodeRunning)();
+  const platform = deps.platform ?? process.platform;
+  const raw = await readOpenWindows(paths.vscodeStorage, platform);
+  const vscodeUp = await (deps.vscodeRunning ?? memoizedFor(defaultVsCodeRunning, platform, isVsCodeRunning))();
   const win: VsCodeWindows = vscodeUp ? raw : { open: [], active: null, error: raw.error };
   const [sessions, claudeRecent, codex] = await Promise.all([
-    readClaudeSessions(paths.home, deps.pidAlive ?? defaultPidAlive),
-    readClaudeRecent(paths.home),
-    readCodexProjects(paths.home, deps.codexRunning ?? defaultCodexRunning),
+    readClaudeSessions(paths.home, deps.pidAlive ?? defaultPidAlive, platform),
+    readClaudeRecent(paths.home, platform),
+    readCodexProjects(
+      paths.home,
+      deps.codexRunning ?? memoizedFor(defaultCodexRunning, platform, isCodexRunning),
+      20,
+      platform,
+    ),
   ]);
   const signals: ProjectSignal[] = [
     ...win.open.map((p) => ({ path: p, source: 'vscode' as const, open: true, at: 0 })),
@@ -132,22 +158,27 @@ export async function listProjects(paths: AppPaths, deps: ProjectDeps = {}): Pro
   ];
   const activePath = win.active ?? sessions[0]?.path ?? null;
   const settings = await loadSettings(paths.userDir);
-  const next = rememberOpen(settings, signals.filter((x) => x.open).map((x) => x.path));
+  const next = rememberOpen(settings, signals.filter((x) => x.open).map((x) => x.path), platform);
   if (next.recent.join('|') !== settings.recent.join('|')) await saveSettings(paths.userDir, next);
-  return { projects: mergeSignals(signals, activePath, next), error: win.error };
+  return { projects: mergeSignals(signals, activePath, next, platform), error: win.error };
 }
 
-export async function addManualProject(paths: AppPaths, projectPath: string): Promise<string> {
+export async function addManualProject(
+  paths: AppPaths,
+  projectPath: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
   const resolved = path.resolve(projectPath.trim());
   const st = await stat(resolved).catch(() => null);
   if (!st?.isDirectory()) throw new Error(`Папка не найдена: ${resolved}`);
   const s = await loadSettings(paths.userDir);
-  await saveSettings(paths.userDir, { ...s, manual: uniq([...s.manual, resolved]) });
+  await saveSettings(paths.userDir, { ...s, manual: uniq([...s.manual, resolved], platform) });
   return resolved;
 }
 
 export async function isKnownProject(paths: AppPaths, projectPath: string, deps?: ProjectDeps): Promise<boolean> {
+  const platform = deps?.platform ?? process.platform;
   const { projects } = await listProjects(paths, deps);
-  const target = key(path.resolve(projectPath));
-  return projects.some((p) => key(p.path) === target);
+  const target = pathKey(path.resolve(projectPath), platform);
+  return projects.some((p) => pathKey(p.path, platform) === target);
 }
