@@ -1,0 +1,12 @@
+.error { display: grid; place-items: center; height: 100vh; padding: 24px; }
+.error__panel {
+  max-width: 560px;
+  padding: 28px;
+  border-radius: 24px;
+  background: rgba(24, 18, 60, 0.7);
+  border: 1px solid rgba(255, 107, 138, 0.4);
+  backdrop-filter: blur(20px);
+}
+.error__title { margin-bottom: 12px; font-size: 20px; }
+.error__text { font-family: Consolas, monospace; font-size: 13px; color: var(--color-error); word-break: break-word; }
+.error__hint { margin-top: 14px; font-size: 13px; color: var(--color-text-dim); }

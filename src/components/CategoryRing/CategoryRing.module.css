@@ -1,0 +1,10 @@
+.ring { position: absolute; inset: 0; pointer-events: none; }
+.ring__slot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: 190px;
+  white-space: nowrap;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) rotate(var(--angle)) translateX(var(--ring-radius)) rotate(calc(-1 * var(--angle)));
+}
