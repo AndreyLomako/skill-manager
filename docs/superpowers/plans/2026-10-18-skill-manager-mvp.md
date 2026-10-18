@@ -3116,7 +3116,7 @@ export function SkillTiles({ skills, selected, installed, showAdd, onToggle, onU
           index={skills.length}
           title="Добавить скилл"
           marker="+"
-          hint="Репозиторий GitHub / GitVerse или папка на компьютере"
+          hint="Репозиторий GitHub или папка на компьютере"
           onClick={onAdd}
           onHover={onHover}
         />
@@ -3865,7 +3865,7 @@ export function AddSkillDialog({ categories, onClose, onAdded, onError }: Props)
         }}
       >
         <div className={styles.form__row}>
-          <Tile title="Репозиторий" hint="GitHub или GitVerse" selected={kind === 'git'} onClick={() => setKind('git')} />
+          <Tile title="Репозиторий" hint="Ссылка на GitHub" selected={kind === 'git'} onClick={() => setKind('git')} />
           <Tile title="Папка на компьютере" index={1} selected={kind === 'local'} onClick={() => setKind('local')} />
         </div>
 
