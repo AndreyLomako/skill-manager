@@ -39,6 +39,14 @@ describe('readClaudeRecent', () => {
     ]);
   });
 
+  it('относительные ключи отбрасываются', async () => {
+    const home = await tmpDir();
+    await writeFiles(home, {
+      '.claude.json': JSON.stringify({ projects: { 'relative/dir': {}, x: {}, 'C:\\ok': {} } }),
+    });
+    expect((await readClaudeRecent(home)).map((p) => p.path)).toEqual(['C:\\ok']);
+  });
+
   it('нет файла или битый — пусто', async () => {
     const home = await tmpDir();
     expect(await readClaudeRecent(home)).toEqual([]);

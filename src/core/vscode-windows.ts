@@ -21,7 +21,12 @@ export function normalizeWinPath(p: string): string {
 
 // Пути из ~/.claude.json и Codex бывают с прямыми слэшами и маленькой буквой диска.
 export function normalizeProjectPath(p: string): string {
-  const n = normalizeWinPath(p.replace(/\//g, '\\').replace(/^\\\\\?\\/, ''));
+  const n = normalizeWinPath(
+    p
+      .replace(/\//g, '\\')
+      .replace(/^\\\\\?\\UNC\\/i, '\\\\')
+      .replace(/^\\\\\?\\/, ''),
+  );
   return /^[A-Za-z]:\\$/.test(n) ? n : n.replace(/\\+$/, '');
 }
 

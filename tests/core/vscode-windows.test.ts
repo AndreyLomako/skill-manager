@@ -29,6 +29,10 @@ describe('normalizeProjectPath', () => {
     expect(normalizeProjectPath('\\\\?\\C:\\work\\a')).toBe('C:\\work\\a');
   });
 
+  it('extended-length UNC превращается в обычный UNC', () => {
+    expect(normalizeProjectPath('\\\\?\\UNC\\server\\share\\x')).toBe('\\\\server\\share\\x');
+  });
+
   it('заменяет слэши, поднимает букву диска и убирает хвостовой разделитель', () => {
     expect(normalizeProjectPath('c:/work/a/')).toBe('C:\\work\\a');
   });

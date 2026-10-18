@@ -50,7 +50,9 @@ export async function readClaudeRecent(home: string): Promise<ProjectSignal[]> {
     const projects = j?.projects && typeof j.projects === 'object' ? Object.keys(j.projects) : [];
     return projects
       .filter((p) => p.trim())
-      .map((p) => ({ path: normalizeProjectPath(p), source: 'claude' as const, open: false, at: 0 }));
+      .map((p) => normalizeProjectPath(p))
+      .filter((p) => path.win32.isAbsolute(p))
+      .map((p) => ({ path: p, source: 'claude' as const, open: false, at: 0 }));
   } catch {
     return [];
   }
