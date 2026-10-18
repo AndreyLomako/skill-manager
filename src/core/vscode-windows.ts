@@ -28,7 +28,7 @@ export function normalizeProjectPath(p: string): string {
 export function fileUriToPath(uri: string): string | null {
   if (typeof uri !== 'string' || !uri.startsWith('file://')) return null;
   try {
-    return normalizeWinPath(fileURLToPath(uri, { windows: true }));
+    return normalizeProjectPath(fileURLToPath(uri, { windows: true }));
   } catch {
     return null;
   }

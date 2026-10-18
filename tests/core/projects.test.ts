@@ -64,6 +64,25 @@ describe('mergeSignals', () => {
     expect(res[1]).toEqual({ path: 'C:\\b', name: 'b', open: true, active: false, sources: ['vscode', 'claude'] });
     expect(res.find((p) => p.path === 'C:\\rec')).toEqual({ path: 'C:\\rec', name: 'rec', open: false, active: false, sources: [] });
   });
+
+  it('путь стабилен при смене порядка/регистра сигналов: берётся написание из settings', () => {
+    const s = { recent: ['C:\\Work\\A'], manual: [] };
+    const fromVscode = { path: 'C:\\Work\\A', source: 'vscode' as const, open: true, at: 0 };
+    const fromClaude = { path: 'c:\\work\\a', source: 'claude' as const, open: true, at: 5 };
+    const first = mergeSignals([fromVscode, fromClaude], 'C:\\Work\\A', s);
+    const second = mergeSignals([fromClaude, fromVscode], 'c:\\work\\a', s);
+    expect(first.map((p) => p.path)).toEqual(['C:\\Work\\A']);
+    expect(second.map((p) => p.path)).toEqual(['C:\\Work\\A']);
+    expect(second[0]).toMatchObject({ name: 'A', active: true, sources: ['vscode', 'claude'] });
+  });
+
+  it('без записи в settings берётся написание первого сигнала', () => {
+    const res = mergeSignals([{ path: 'c:\\work\\a', source: 'claude', open: true, at: 5 }], 'C:\\WORK\\A', {
+      recent: [],
+      manual: [],
+    });
+    expect(res.map((p) => p.path)).toEqual(['c:\\work\\a']);
+  });
 });
 
 describe('memoizeFor', () => {
@@ -92,6 +111,11 @@ describe('rememberOpen', () => {
     const res = rememberOpen({ recent, manual: [] }, ['C:\\new', 'C:\\p3']);
     expect(res.recent.slice(0, 3)).toEqual(['C:\\new', 'C:\\p3', 'C:\\p0']);
     expect(res.recent).toHaveLength(20);
+  });
+
+  it('сохраняет уже записанное написание пути', () => {
+    const res = rememberOpen({ recent: ['C:\\Work\\A', 'C:\\b'], manual: [] }, ['c:\\work\\a']);
+    expect(res.recent).toEqual(['C:\\Work\\A', 'C:\\b']);
   });
 });
 

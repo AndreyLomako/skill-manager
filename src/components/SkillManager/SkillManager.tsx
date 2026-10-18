@@ -56,6 +56,8 @@ const POLL_MS = 2000;
 const NOTICE_MS = 9000;
 const NOTICE_ACTION_MS = 15000;
 
+const pathKey = (p: string) => p.toLowerCase();
+
 export function SkillManager({ initialCatalog, initialProjects }: { initialCatalog: Catalog; initialProjects: ProjectsResult }) {
   const blob = useRef<BlobHandle>(null);
   const [catalog, setCatalog] = useState(initialCatalog);
@@ -116,18 +118,36 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     return () => clearInterval(timer);
   }, []);
 
+  // Пути проектов сравниваются без учёта регистра (Windows). Если в списке поменялось только
+  // написание активного пути — просто переводим activePath на новую строку (ключ тот же).
   useEffect(() => {
     const list = projects.projects;
     if (activePath === GLOBAL_PROJECT) return;
-    if (activePath !== null && list.some((p) => p.path === activePath)) return;
+    if (activePath !== null) {
+      const same = list.find((p) => pathKey(p.path) === pathKey(activePath));
+      if (same) {
+        if (same.path !== activePath) setActivePath(same.path);
+        return;
+      }
+    }
     const next = list.find((p) => p.active)?.path ?? list[0]?.path ?? null;
     if (next !== activePath) setActivePath(next);
   }, [projects, activePath]);
 
-  const project = projects.projects.find((p) => p.path === activePath) ?? null;
-  const scopeKey = activePath === GLOBAL_PROJECT ? 'global' : project ? project.path : null;
+  const activeKey = activePath === null ? null : pathKey(activePath);
+  const project = projects.projects.find((p) => pathKey(p.path) === activeKey) ?? null;
+  // scopeKey — регистронезависимый ключ: смена написания пути не меняет scope и не сбрасывает состояние
+  const scopeKey = activePath === GLOBAL_PROJECT ? 'global' : project ? pathKey(project.path) : null;
+  const scopePath = project?.path ?? null;
   const scope = useMemo<Scope | null>(
-    () => (scopeKey === null ? null : scopeKey === 'global' && activePath === GLOBAL_PROJECT ? { kind: 'global' } : { kind: 'project', path: scopeKey }),
+    () =>
+      scopeKey === null
+        ? null
+        : scopeKey === 'global' && activePath === GLOBAL_PROJECT
+          ? { kind: 'global' }
+          : scopePath === null
+            ? null
+            : { kind: 'project', path: scopePath },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scopeKey],
   );
@@ -157,9 +177,9 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   useEffect(() => {
     setInstalled({});
     setUpdating(null);
-    const p = projectsRef.current.projects.find((x) => x.path === activePath);
+    const p = projectsRef.current.projects.find((x) => pathKey(x.path) === activeKey);
     setAgentChoice(defaultAgentChoice(p?.sources ?? null));
-  }, [activePath]);
+  }, [activeKey]);
 
   useEffect(() => {
     refreshInstalled(scope, agentChoice).catch(() => undefined);
@@ -186,7 +206,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
 
   // Обновление статусов и списка после изменения содержимого (по ключу проекта и ТЕКУЩЕМУ выбору агента)
   const refreshAfterChange = async (targetScope: Scope, targetKey: string | null) => {
-    const currentKey = activePathRef.current === GLOBAL_PROJECT ? 'global' : activePathRef.current;
+    const current = activePathRef.current;
+    const currentKey = current === GLOBAL_PROJECT ? 'global' : current === null ? null : pathKey(current);
     if (currentKey !== targetKey) return;
     const choice = agentRef.current;
     await Promise.all([

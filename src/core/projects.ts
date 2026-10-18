@@ -57,8 +57,10 @@ export async function saveSettings(userDir: string, s: Settings): Promise<void> 
   await writeJsonAtomic(path.join(userDir, SETTINGS_FILE), s);
 }
 
+// Уже записанное написание пути сохраняется: иначе смена регистра в сигналах переписывала бы recent.
 export function rememberOpen(s: Settings, open: string[]): Settings {
-  return { ...s, recent: uniq([...open, ...s.recent]).slice(0, MAX_RECENT) };
+  const stored = new Map(s.recent.map((p) => [key(p), p]));
+  return { ...s, recent: uniq([...open.map((p) => stored.get(key(p)) ?? p), ...s.recent]).slice(0, MAX_RECENT) };
 }
 
 export interface ProjectDeps {
@@ -95,13 +97,17 @@ export function mergeSignals(signals: ProjectSignal[], activePath: string | null
     ...s.manual,
   ]);
   const manualKeys = new Set(s.manual.map(key));
+  // Показываемый путь не должен меняться от порядка/регистра сигналов: сначала написание из settings.
+  const stored = new Map<string, string>();
+  for (const p of [...s.recent, ...s.manual]) if (!stored.has(key(p))) stored.set(key(p), p);
   return order.map((p) => {
     const mine = signals.filter((x) => key(x.path) === key(p));
     const found = new Set<ProjectSource>(mine.map((x) => x.source));
     if (manualKeys.has(key(p))) found.add('manual');
+    const shown = stored.get(key(p)) ?? mine[0]?.path ?? p;
     return {
-      path: mine[0]?.path ?? p,
-      name: path.win32.basename(p) || p,
+      path: shown,
+      name: path.win32.basename(shown) || shown,
       open: mine.some((x) => x.open),
       active: key(p) === activeKey,
       sources: SOURCE_ORDER.filter((src) => found.has(src)),

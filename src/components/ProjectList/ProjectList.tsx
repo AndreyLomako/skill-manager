@@ -49,13 +49,13 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
   const renderTiles = (list: Project[], offset: number) =>
     list.map((p, i) => (
       <Tile
-        key={p.path}
+        key={p.path.toLowerCase()}
         index={offset + i}
         title={p.name}
         hint={sourcesLabel(p.sources) ? `${sourcesLabel(p.sources)} — ${p.path}` : p.path}
         marker={p.open ? '●' : '○'}
         tone={p.open ? 'success' : 'default'}
-        selected={p.path === activePath}
+        selected={activePath !== null && p.path.toLowerCase() === activePath.toLowerCase()}
         onClick={() => onSelect(p.path)}
         onHover={onHover}
       />

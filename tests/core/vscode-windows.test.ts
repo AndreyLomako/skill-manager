@@ -15,6 +15,10 @@ describe('fileUriToPath', () => {
     ).toBe('C:\\Users\\Иван\\OneDrive\\Desktop\\my app');
   });
 
+  it('убирает хвостовой слэш, чтобы совпадать с путями Claude', () => {
+    expect(fileUriToPath('file:///c%3A/work/a/')).toBe('C:\\work\\a');
+  });
+
   it('возвращает null для не-file URI', () => {
     expect(fileUriToPath('vscode-remote://wsl+Ubuntu/home/x')).toBeNull();
   });
