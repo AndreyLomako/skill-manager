@@ -1,11 +1,16 @@
 'use server';
 
+import { access, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { CatalogError, loadCatalog } from '@/core/catalog';
 import { getInstalled, installSkills } from '@/core/installer';
-import { resolveAppPaths } from '@/core/paths';
+import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
-import type { Catalog, InstallResult, InstalledState } from '@/core/types';
+import { ensureSource, sourceCacheDir } from '@/core/sources';
+import type { Catalog, InstallResult, InstalledState, SourceDef } from '@/core/types';
 import { addUserSkill, type NewUserSkill } from '@/core/user-catalog';
+
+const exists = (p: string) => access(p).then(() => true, () => false);
 
 export type CatalogResult = { ok: true; catalog: Catalog } | { ok: false; error: string };
 
@@ -59,9 +64,31 @@ export async function addUserSkillAction(
   input: NewUserSkill,
 ): Promise<{ ok: true; skillId: string; catalog: CatalogResult } | { ok: false; error: string }> {
   try {
-    const { skillId } = await addUserSkill(appPaths().userDir, input);
+    const paths = appPaths();
+    const { skillId } = await addUserSkill(paths.userDir, input, (src, skillPath) => verifyUserSkill(paths, src, skillPath));
     return { ok: true, skillId, catalog: await getCatalogAction(false) };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
+  }
+}
+
+async function verifyUserSkill(paths: AppPaths, src: SourceDef, skillPath: string): Promise<void> {
+  // Свежий клон, сделанный только ради проверки, удаляем при неудаче, чтобы его
+  // не подхватил другой источник с тем же id.
+  const cache = src.type === 'git' ? sourceCacheDir(paths.cacheDir, 'user', src.id) : null;
+  const hadCache = cache ? await exists(path.join(cache, '.git')) : true;
+  try {
+    const dir = await ensureSource(src, {
+      layer: 'user',
+      manifestDir: paths.userDir,
+      cacheDir: paths.cacheDir,
+      update: false,
+    });
+    if (!(await exists(path.join(dir, skillPath, 'SKILL.md')))) {
+      throw new Error(`SKILL.md не найден по пути «${skillPath}»`);
+    }
+  } catch (e) {
+    if (cache && !hadCache) await rm(cache, { recursive: true, force: true }).catch(() => {});
+    throw e;
   }
 }

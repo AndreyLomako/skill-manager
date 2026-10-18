@@ -37,7 +37,14 @@ async function readUserManifest(file: string): Promise<Manifest> {
   }
 }
 
-export async function addUserSkill(userDir: string, input: NewUserSkill): Promise<{ skillId: string }> {
+export type VerifySkill = (source: SourceDef, skillPath: string) => Promise<void>;
+
+export async function addUserSkill(
+  userDir: string,
+  input: NewUserSkill,
+  verify?: VerifySkill,
+): Promise<{ skillId: string }> {
+  if (input.kind !== 'git' && input.kind !== 'local') throw new Error('Неизвестный тип источника');
   const location = input.location.trim();
   if (!location) throw new Error('Укажите адрес репозитория или папку');
   const ref = input.ref?.trim() ?? '';
@@ -60,27 +67,29 @@ export async function addUserSkill(userDir: string, input: NewUserSkill): Promis
       : s.type === 'local' && path.resolve(userDir, s.path) === localPath,
   );
 
-  let sourceId: string;
+  let source: SourceDef;
   if (existing) {
-    sourceId = existing.id;
+    source = existing;
   } else {
     const base =
       input.kind === 'git'
         ? slugify(location.replace(/\/+$/, '').split('/').slice(-2).join('-'))
         : slugify(path.basename(localPath));
-    sourceId = uniqueId(base || 'source', new Set(manifest.sources.map((s) => s.id)));
-    const src: SourceDef =
+    const sourceId = uniqueId(base || 'source', new Set(manifest.sources.map((s) => s.id)));
+    source =
       input.kind === 'git'
         ? { id: sourceId, type: 'git', url: location, ...(ref ? { ref } : {}) }
         : { id: sourceId, type: 'local', path: localPath };
-    manifest.sources.push(src);
+    manifest.sources.push(source);
   }
+  const sourceId = source.id;
 
   const skillPath = (input.skillPath ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
   const idBase = slugify(skillPath ? (skillPath.split('/').pop() ?? '') : sourceId) || 'skill';
   const skillId = uniqueId(idBase, new Set(manifest.skills.map((s) => s.id)));
   manifest.skills.push({ id: skillId, source: sourceId, path: skillPath, category });
 
+  if (verify) await verify(source, skillPath);
   await writeJsonAtomic(file, manifest);
   return { skillId };
 }

@@ -27,6 +27,10 @@ export function AddSkillDialog({ categories, onClose, onAdded, onError }: Props)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const close = () => {
+    if (!busy) onClose();
+  };
+
   const submit = async () => {
     if (busy) return;
     setBusy(true);
@@ -55,7 +59,7 @@ export function AddSkillDialog({ categories, onClose, onAdded, onError }: Props)
   };
 
   return (
-    <Dialog title="Добавить свой скилл" onClose={onClose}>
+    <Dialog title="Добавить свой скилл" onClose={close}>
       <form
         className={styles.form}
         onSubmit={(e) => {
@@ -123,7 +127,7 @@ export function AddSkillDialog({ categories, onClose, onAdded, onError }: Props)
             disabled={busy}
             onClick={() => void submit()}
           />
-          <Tile title="Отмена" onClick={onClose} />
+          <Tile title="Отмена" disabled={busy} onClick={close} />
         </div>
       </form>
     </Dialog>
