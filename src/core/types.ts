@@ -47,6 +47,7 @@ export interface Project {
   name: string;
   open: boolean;
   active: boolean;
+  sources: ProjectSource[];
 }
 
 export type InstallStatus = 'installed' | 'already-installed' | 'error';

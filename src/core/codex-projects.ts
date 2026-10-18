@@ -70,8 +70,8 @@ export async function readCodexProjects(
 
 export function isCodexRunning(): Promise<boolean> {
   return new Promise((resolve) => {
-    execFile('tasklist', ['/FO', 'CSV', '/NH'], { windowsHide: true, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) =>
-      resolve(!err && /^"codex\.exe"/im.test(String(stdout))),
+    execFile('tasklist', ['/FI', 'IMAGENAME eq codex.exe', '/NH'], { windowsHide: true }, (err, stdout) =>
+      resolve(!err && /codex\.exe/i.test(String(stdout))),
     );
   });
 }

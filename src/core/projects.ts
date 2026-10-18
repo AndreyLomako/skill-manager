@@ -2,7 +2,9 @@ import { readFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { writeJsonAtomic } from './json-file';
 import type { AppPaths } from './paths';
-import type { Project } from './types';
+import { pidAlive as defaultPidAlive, readClaudeRecent, readClaudeSessions } from './claude-projects';
+import { isCodexRunning, readCodexProjects } from './codex-projects';
+import type { Project, ProjectSignal, ProjectSource } from './types';
 import { isVsCodeRunning, readOpenWindows, type VsCodeWindows } from './vscode-windows';
 
 export interface Settings {
@@ -59,30 +61,74 @@ export function rememberOpen(s: Settings, open: string[]): Settings {
   return { ...s, recent: uniq([...open, ...s.recent]).slice(0, MAX_RECENT) };
 }
 
-export function mergeProjects(win: VsCodeWindows, s: Settings): Project[] {
-  const activeKey = win.active ? key(win.active) : null;
-  const openKeys = new Set(win.open.map(key));
-  const openSorted = [...win.open].sort(
-    (a, b) => Number(key(b) === activeKey) - Number(key(a) === activeKey),
-  );
-  return uniq([...openSorted, ...s.recent, ...s.manual]).map((p) => ({
-    path: p,
-    name: path.win32.basename(p) || p,
-    open: openKeys.has(key(p)),
-    active: key(p) === activeKey,
-  }));
+export interface ProjectDeps {
+  vscodeRunning?: () => Promise<boolean>;
+  pidAlive?: (pid: number) => boolean;
+  codexRunning?: () => Promise<boolean>;
 }
 
-export async function listProjects(
-  paths: AppPaths,
-  running: () => Promise<boolean> = isVsCodeRunning,
-): Promise<ProjectsResult> {
+const SOURCE_ORDER: ProjectSource[] = ['vscode', 'claude', 'codex', 'manual'];
+
+// Проверки процессов (tasklist) медленные, а UI опрашивает список каждые 2 с.
+export function memoizeFor<T>(ms: number, fn: () => Promise<T>): () => Promise<T> {
+  let cached: { at: number; value: Promise<T> } | null = null;
+  return () => {
+    const now = Date.now();
+    if (!cached || now - cached.at >= ms) cached = { at: now, value: fn() };
+    return cached.value;
+  };
+}
+
+const PROCESS_CHECK_TTL_MS = 5000;
+const defaultVsCodeRunning = memoizeFor(PROCESS_CHECK_TTL_MS, isVsCodeRunning);
+const defaultCodexRunning = memoizeFor(PROCESS_CHECK_TTL_MS, isCodexRunning);
+
+export function mergeSignals(signals: ProjectSignal[], activePath: string | null, s: Settings): Project[] {
+  const activeKey = activePath ? key(activePath) : null;
+  const vscodeOpen = signals.filter((x) => x.open && x.source === 'vscode');
+  const otherOpen = signals.filter((x) => x.open && x.source !== 'vscode').sort((a, b) => b.at - a.at);
+  const closed = signals.filter((x) => !x.open).sort((a, b) => b.at - a.at);
+  const order = uniq([
+    ...(activePath ? [activePath] : []),
+    ...[...vscodeOpen, ...otherOpen, ...closed].map((x) => x.path),
+    ...s.recent,
+    ...s.manual,
+  ]);
+  const manualKeys = new Set(s.manual.map(key));
+  return order.map((p) => {
+    const mine = signals.filter((x) => key(x.path) === key(p));
+    const found = new Set<ProjectSource>(mine.map((x) => x.source));
+    if (manualKeys.has(key(p))) found.add('manual');
+    return {
+      path: mine[0]?.path ?? p,
+      name: path.win32.basename(p) || p,
+      open: mine.some((x) => x.open),
+      active: key(p) === activeKey,
+      sources: SOURCE_ORDER.filter((src) => found.has(src)),
+    };
+  });
+}
+
+export async function listProjects(paths: AppPaths, deps: ProjectDeps = {}): Promise<ProjectsResult> {
   const raw = await readOpenWindows(paths.vscodeStorage);
-  const win: VsCodeWindows = (await running()) ? raw : { open: [], active: null, error: raw.error };
+  const vscodeUp = await (deps.vscodeRunning ?? defaultVsCodeRunning)();
+  const win: VsCodeWindows = vscodeUp ? raw : { open: [], active: null, error: raw.error };
+  const [sessions, claudeRecent, codex] = await Promise.all([
+    readClaudeSessions(paths.home, deps.pidAlive ?? defaultPidAlive),
+    readClaudeRecent(paths.home),
+    readCodexProjects(paths.home, deps.codexRunning ?? defaultCodexRunning),
+  ]);
+  const signals: ProjectSignal[] = [
+    ...win.open.map((p) => ({ path: p, source: 'vscode' as const, open: true, at: 0 })),
+    ...sessions,
+    ...claudeRecent,
+    ...codex,
+  ];
+  const activePath = win.active ?? sessions[0]?.path ?? null;
   const settings = await loadSettings(paths.userDir);
-  const next = rememberOpen(settings, win.open);
+  const next = rememberOpen(settings, signals.filter((x) => x.open).map((x) => x.path));
   if (next.recent.join('|') !== settings.recent.join('|')) await saveSettings(paths.userDir, next);
-  return { projects: mergeProjects(win, next), error: win.error };
+  return { projects: mergeSignals(signals, activePath, next), error: win.error };
 }
 
 export async function addManualProject(paths: AppPaths, projectPath: string): Promise<string> {
@@ -94,12 +140,8 @@ export async function addManualProject(paths: AppPaths, projectPath: string): Pr
   return resolved;
 }
 
-export async function isKnownProject(
-  paths: AppPaths,
-  projectPath: string,
-  running?: () => Promise<boolean>,
-): Promise<boolean> {
-  const { projects } = await listProjects(paths, running);
+export async function isKnownProject(paths: AppPaths, projectPath: string, deps?: ProjectDeps): Promise<boolean> {
+  const { projects } = await listProjects(paths, deps);
   const target = key(path.resolve(projectPath));
   return projects.some((p) => key(p.path) === target);
 }

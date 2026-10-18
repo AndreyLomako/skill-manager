@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import {
@@ -6,7 +6,8 @@ import {
   isKnownProject,
   listProjects,
   loadSettings,
-  mergeProjects,
+  memoizeFor,
+  mergeSignals,
   rememberOpen,
 } from '../../src/core/projects';
 import type { AppPaths } from '../../src/core/paths';
@@ -14,8 +15,12 @@ import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 
 afterEach(cleanupTmp);
 
-const running = async () => true;
-const stopped = async () => false;
+const deps = {
+  vscodeRunning: async () => true,
+  pidAlive: (pid: number) => pid === 4242,
+  codexRunning: async () => false,
+};
+const stoppedDeps = { ...deps, vscodeRunning: async () => false, pidAlive: () => false };
 
 async function setup() {
   const root = await tmpDir();
@@ -24,7 +29,7 @@ async function setup() {
     userDir: path.join(root, 'user'),
     cacheDir: path.join(root, '.cache'),
     vscodeStorage: path.join(root, 'storage.json'),
-    home: root,
+    home: path.join(root, 'home'),
     trashDir: path.join(root, 'user', 'trash'),
   };
   await writeFiles(root, {
@@ -34,22 +39,50 @@ async function setup() {
         openedWindows: [{ folder: 'file:///c%3A/work/a' }],
       },
     }),
+    'home/.claude/sessions/4242.json': JSON.stringify({ pid: 4242, cwd: 'c:\\work\\claude-proj', startedAt: 5 }),
+    'home/.claude.json': JSON.stringify({ projects: { 'c:/work/claude-recent': {} } }),
   });
   return { root, paths };
 }
 
-describe('mergeProjects', () => {
-  it('активный первым, затем открытые, недавние и ручные без дублей', () => {
-    const res = mergeProjects(
-      { open: ['C:\\a', 'C:\\b'], active: 'C:\\b' },
-      { recent: ['c:\\A', 'C:\\old'], manual: ['C:\\man', 'C:\\old'] },
+describe('mergeSignals', () => {
+  it('активный, открытые (vscode первыми), недавние по свежести, settings; источники объединяются', () => {
+    const res = mergeSignals(
+      [
+        { path: 'C:\\b', source: 'vscode', open: true, at: 0 },
+        { path: 'C:\\a', source: 'vscode', open: true, at: 0 },
+        { path: 'c:\\B', source: 'claude', open: true, at: 50 },
+        { path: 'C:\\c', source: 'claude', open: true, at: 90 },
+        { path: 'C:\\old', source: 'codex', open: false, at: 10 },
+        { path: 'C:\\newer', source: 'codex', open: false, at: 20 },
+      ],
+      'C:\\a',
+      { recent: ['C:\\rec', 'C:\\old'], manual: ['C:\\man', 'C:\\a'] },
     );
-    expect(res).toEqual([
-      { path: 'C:\\b', name: 'b', open: true, active: true },
-      { path: 'C:\\a', name: 'a', open: true, active: false },
-      { path: 'C:\\old', name: 'old', open: false, active: false },
-      { path: 'C:\\man', name: 'man', open: false, active: false },
-    ]);
+    expect(res.map((p) => p.path)).toEqual(['C:\\a', 'C:\\b', 'C:\\c', 'C:\\newer', 'C:\\old', 'C:\\rec', 'C:\\man']);
+    expect(res[0]).toEqual({ path: 'C:\\a', name: 'a', open: true, active: true, sources: ['vscode', 'manual'] });
+    expect(res[1]).toEqual({ path: 'C:\\b', name: 'b', open: true, active: false, sources: ['vscode', 'claude'] });
+    expect(res.find((p) => p.path === 'C:\\rec')).toEqual({ path: 'C:\\rec', name: 'rec', open: false, active: false, sources: [] });
+  });
+});
+
+describe('memoizeFor', () => {
+  it('вызывает fn один раз в окне, делит промис между конкурентными вызовами и обновляет после окна', async () => {
+    vi.useFakeTimers();
+    try {
+      const fn = vi.fn(async () => true);
+      const memo = memoizeFor(5000, fn);
+      await Promise.all([memo(), memo()]);
+      expect(fn).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(4000);
+      await memo();
+      expect(fn).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1500);
+      await memo();
+      expect(fn).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -89,18 +122,30 @@ describe('loadSettings', () => {
 });
 
 describe('listProjects', () => {
-  it('показывает открытые и запоминает их как недавние', async () => {
+  it('объединяет VS Code, Claude и запоминает открытые как недавние', async () => {
     const { paths } = await setup();
-    const res = await listProjects(paths, running);
-    expect(res.projects).toEqual([{ path: 'C:\\work\\a', name: 'a', open: true, active: true }]);
-    expect((await loadSettings(paths.userDir)).recent).toEqual(['C:\\work\\a']);
+    const res = await listProjects(paths, deps);
+    expect(res.projects).toEqual([
+      { path: 'C:\\work\\a', name: 'a', open: true, active: true, sources: ['vscode'] },
+      { path: 'C:\\work\\claude-proj', name: 'claude-proj', open: true, active: false, sources: ['claude'] },
+      { path: 'C:\\work\\claude-recent', name: 'claude-recent', open: false, active: false, sources: ['claude'] },
+    ]);
+    expect((await loadSettings(paths.userDir)).recent).toEqual(['C:\\work\\a', 'C:\\work\\claude-proj']);
   });
 
   it('если VS Code не запущен, проекты становятся недавними', async () => {
     const { paths } = await setup();
-    await listProjects(paths, running);
-    const res = await listProjects(paths, stopped);
-    expect(res.projects).toEqual([{ path: 'C:\\work\\a', name: 'a', open: false, active: false }]);
+    await listProjects(paths, deps);
+    const res = await listProjects(paths, stoppedDeps);
+    expect(res.projects).toContainEqual({ path: 'C:\\work\\a', name: 'a', open: false, active: false, sources: [] });
+    expect(res.projects).toContainEqual({ path: 'C:\\work\\claude-proj', name: 'claude-proj', open: false, active: false, sources: [] });
+    expect(res.projects).toContainEqual({ path: 'C:\\work\\claude-recent', name: 'claude-recent', open: false, active: false, sources: ['claude'] });
+  });
+
+  it('если VS Code не запущен, активной становится свежая сессия Claude', async () => {
+    const { paths } = await setup();
+    const res = await listProjects(paths, { ...deps, vscodeRunning: async () => false });
+    expect(res.projects.find((p) => p.path === 'C:\\work\\claude-proj')?.active).toBe(true);
   });
 });
 
@@ -110,8 +155,8 @@ describe('addManualProject / isKnownProject', () => {
     const proj = path.join(root, 'manual-proj');
     await writeFiles(proj, { 'readme.txt': 'x' });
     expect(await addManualProject(paths, proj)).toBe(proj);
-    expect(await isKnownProject(paths, proj, running)).toBe(true);
-    expect(await isKnownProject(paths, path.join(root, 'other'), running)).toBe(false);
+    expect(await isKnownProject(paths, proj, deps)).toBe(true);
+    expect(await isKnownProject(paths, path.join(root, 'other'), deps)).toBe(false);
   });
 
   it('отклоняет несуществующую папку', async () => {

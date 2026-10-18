@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { fileUriToPath, readOpenWindows } from '../../src/core/vscode-windows';
+import { fileUriToPath, normalizeProjectPath, readOpenWindows } from '../../src/core/vscode-windows';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 
 afterEach(cleanupTmp);
@@ -17,6 +17,20 @@ describe('fileUriToPath', () => {
 
   it('возвращает null для не-file URI', () => {
     expect(fileUriToPath('vscode-remote://wsl+Ubuntu/home/x')).toBeNull();
+  });
+});
+
+describe('normalizeProjectPath', () => {
+  it('убирает префикс extended-length', () => {
+    expect(normalizeProjectPath('\\\\?\\C:\\work\\a')).toBe('C:\\work\\a');
+  });
+
+  it('заменяет слэши, поднимает букву диска и убирает хвостовой разделитель', () => {
+    expect(normalizeProjectPath('c:/work/a/')).toBe('C:\\work\\a');
+  });
+
+  it('корень диска остаётся корнем', () => {
+    expect(normalizeProjectPath('C:\\')).toBe('C:\\');
   });
 });
 
