@@ -17,6 +17,7 @@ import {
   GLOBAL_PROJECT,
   INSTALLED,
   agentsOf,
+  clientPathKey,
   countByCategory,
   defaultAgentChoice,
   mergeInstalled,
@@ -56,7 +57,7 @@ const POLL_MS = 2000;
 const NOTICE_MS = 9000;
 const NOTICE_ACTION_MS = 15000;
 
-const pathKey = (p: string) => p.toLowerCase();
+const pathKey = (p: string) => clientPathKey(p, typeof navigator === 'undefined' ? '' : navigator.userAgent);
 
 export function SkillManager({ initialCatalog, initialProjects }: { initialCatalog: Catalog; initialProjects: ProjectsResult }) {
   const blob = useRef<BlobHandle>(null);

@@ -82,3 +82,10 @@ export function summarizeByCategory(
     .map((c) => `${c.title} ${counts.get(c.id)}`)
     .join(' · ');
 }
+
+// Ключ сравнения путей в рендерере: он работает на той же машине, что и сервер, поэтому
+// правило выводим из userAgent. Linux (но не Android) — регистр значим, иначе — без учёта регистра.
+export function clientPathKey(p: string, userAgent: string): string {
+  const caseSensitive = userAgent.includes('Linux') && !userAgent.includes('Android');
+  return caseSensitive ? p : p.toLowerCase();
+}

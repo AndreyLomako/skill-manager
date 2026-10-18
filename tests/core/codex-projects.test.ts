@@ -98,7 +98,7 @@ describe.each(['darwin', 'linux'] as const)('posix (%s)', (platform) => {
 });
 
 describe('isCodexRunning', () => {
-  it('win32: tasklist codex.exe; darwin/linux: pgrep -x codex', async () => {
+  it('win32: tasklist codex.exe; darwin/linux: pgrep -ix codex', async () => {
     const calls: Array<[string, string[]]> = [];
     const run = async (c: string, a: string[]) => (calls.push([c, a]), { code: 0, stdout: 'codex.exe 1 Console' });
     expect(await isCodexRunning('win32', run)).toBe(true);
@@ -106,8 +106,8 @@ describe('isCodexRunning', () => {
     expect(await isCodexRunning('linux', run)).toBe(true);
     expect(calls).toEqual([
       ['tasklist', ['/FI', 'IMAGENAME eq codex.exe', '/NH']],
-      ['pgrep', ['-x', 'codex']],
-      ['pgrep', ['-x', 'codex']],
+      ['pgrep', ['-ix', 'codex']],
+      ['pgrep', ['-ix', 'codex']],
     ]);
     expect(await isCodexRunning('linux', async () => ({ code: 1, stdout: '' }))).toBe(false);
   });

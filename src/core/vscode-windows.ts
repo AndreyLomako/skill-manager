@@ -117,5 +117,9 @@ export async function readOpenWindows(
 // storage.json хранит окна и после закрытия VS Code (для восстановления сессии),
 // поэтому «открыто» имеет смысл, только если процесс VS Code запущен.
 export function isVsCodeRunning(platform: NodeJS.Platform = process.platform, run?: RunFn): Promise<boolean> {
-  return isProcessRunning({ win32: 'Code.exe', darwin: 'Code', linux: 'code' }, platform, run);
+  return isProcessRunning({
+      win32: 'Code.exe',
+      darwin: { pgrep: ['-f', 'Visual Studio Code.app/Contents/MacOS/'] },
+      linux: 'code',
+    }, platform, run);
 }

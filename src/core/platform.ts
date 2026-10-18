@@ -42,19 +42,24 @@ const defaultRun: RunFn = (cmd, args) =>
   });
 
 // Не бросает: любая ошибка запуска означает «не запущен».
+// Запись платформы: строка (win32 — имя образа для tasklist, иначе `pgrep -x имя`)
+// или { pgrep: [...] } — готовые аргументы pgrep (например, поиск по пути через -f).
+export type ProcessSpec = string | { pgrep: string[] };
+
 export async function isProcessRunning(
-  names: Partial<Record<Platform, string>>,
+  names: Partial<Record<Platform, ProcessSpec>>,
   platform: Platform = process.platform,
   run: RunFn = defaultRun,
 ): Promise<boolean> {
-  const name = names[platform];
-  if (!name) return false;
+  const spec = names[platform];
+  if (!spec) return false;
   try {
+    if (typeof spec === 'object') return (await run('pgrep', spec.pgrep)).code === 0;
     if (platform === 'win32') {
-      const r = await run('tasklist', ['/FI', `IMAGENAME eq ${name}`, '/NH']);
-      return r.code === 0 && r.stdout.toLowerCase().includes(name.toLowerCase());
+      const r = await run('tasklist', ['/FI', `IMAGENAME eq ${spec}`, '/NH']);
+      return r.code === 0 && r.stdout.toLowerCase().includes(spec.toLowerCase());
     }
-    return (await run('pgrep', ['-x', name])).code === 0;
+    return (await run('pgrep', ['-x', spec])).code === 0;
   } catch {
     return false;
   }

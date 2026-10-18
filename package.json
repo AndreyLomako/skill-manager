@@ -81,8 +81,20 @@
     },
     "mac": {
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png",
@@ -110,7 +122,7 @@
         "provider": "github",
         "owner": "AndreyLomako",
         "repo": "skill-manager",
-        "releaseType": "release"
+        "releaseType": "draft"
       }
     ]
   },

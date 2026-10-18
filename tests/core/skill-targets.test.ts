@@ -26,6 +26,16 @@ describe.runIf(process.platform === 'win32')('isForbiddenProjectRoot', () => {
   });
 });
 
+describe('isForbiddenProjectRoot: posix-пути', () => {
+  it.each(['/home/u/.codex', '/home/u/.codex/x', '/home/u/.claude/plugins/p'])('«%s» запрещён', (p) => {
+    expect(isForbiddenProjectRoot(p, '/home/u')).toBe(true);
+  });
+
+  it.each(['/home/u/proj', '/home/u', '/home/u/.codexx'])('«%s» разрешён', (p) => {
+    expect(isForbiddenProjectRoot(p, '/home/u')).toBe(false);
+  });
+});
+
 describe('skillsRoot', () => {
   it.each([
     [{ kind: 'project', path: 'C:\\p' } as const, 'claude' as const, path.join('C:\\p', '.claude', 'skills')],

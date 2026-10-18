@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentsOf,
+  clientPathKey,
   countByCategory,
   defaultAgentChoice,
   MY_SKILLS,
@@ -79,5 +80,21 @@ describe('агенты', () => {
   it('sourcesLabel', () => {
     expect(sourcesLabel(['vscode', 'claude', 'codex', 'manual'])).toBe('VS Code · Claude · Codex · вручную');
     expect(sourcesLabel([])).toBe('');
+  });
+});
+
+describe('clientPathKey', () => {
+  const LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Electron/44 Safari/537.36';
+  const WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Electron/44';
+  const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Electron/44';
+  const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/140 Mobile';
+
+  it('Linux: регистр значим', () => {
+    expect(clientPathKey('/home/u/App', LINUX)).toBe('/home/u/App');
+    expect(clientPathKey('/home/u/App', LINUX)).not.toBe(clientPathKey('/home/u/app', LINUX));
+  });
+
+  it.each([WIN, MAC, ANDROID, ''])('не Linux («%s»): нижний регистр', (ua) => {
+    expect(clientPathKey('C:\Work\App', ua)).toBe('c:\work\app');
   });
 });

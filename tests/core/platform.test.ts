@@ -59,13 +59,20 @@ describe('isProcessRunning', () => {
   });
 
   it.each([
-    ['darwin', 'Code'],
-    ['linux', 'code'],
-  ] as const)('%s: pgrep -x %s, код 0 = запущен', async (platform, name) => {
+    ['darwin', ['-x', 'Code']],
+    ['linux', ['-x', 'code']],
+  ] as const)('%s: строковое имя -> pgrep -x, код 0 = запущен', async (platform, args) => {
     const run = vi.fn(async (_cmd: string, _args: string[]) => ({ code: 0, stdout: '42\n' }));
     expect(await isProcessRunning(names, platform, run)).toBe(true);
-    expect(run).toHaveBeenCalledWith('pgrep', ['-x', name]);
+    expect(run).toHaveBeenCalledWith('pgrep', [...args]);
     expect(await isProcessRunning(names, platform, async () => ({ code: 1, stdout: '' }))).toBe(false);
+  });
+
+  it('pgrep-запись передаёт аргументы как есть', async () => {
+    const run = vi.fn(async (_cmd: string, _args: string[]) => ({ code: 0, stdout: '42\n' }));
+    const custom = { darwin: { pgrep: ['-f', 'Visual Studio Code.app/Contents/MacOS/'] } };
+    expect(await isProcessRunning(custom, 'darwin', run)).toBe(true);
+    expect(run).toHaveBeenCalledWith('pgrep', ['-f', 'Visual Studio Code.app/Contents/MacOS/']);
   });
 
   it('не бросает: ошибка запуска и отсутствие имени дают false', async () => {

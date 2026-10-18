@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { GLOBAL_PROJECT, sourcesLabel } from '@/core/selection';
+import { clientPathKey, GLOBAL_PROJECT, sourcesLabel } from '@/core/selection';
 import type { Project } from '@/core/types';
 import { Tile } from '../Tile/Tile';
 import styles from './ProjectList.module.css';
@@ -46,16 +46,17 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
     }
   };
 
+  const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent;
   const renderTiles = (list: Project[], offset: number) =>
     list.map((p, i) => (
       <Tile
-        key={p.path.toLowerCase()}
+        key={p.path}
         index={offset + i}
         title={p.name}
         hint={sourcesLabel(p.sources) ? `${sourcesLabel(p.sources)} — ${p.path}` : p.path}
         marker={p.open ? '●' : '○'}
         tone={p.open ? 'success' : 'default'}
-        selected={activePath !== null && p.path.toLowerCase() === activePath.toLowerCase()}
+        selected={activePath !== null && clientPathKey(p.path, ua) === clientPathKey(activePath, ua)}
         onClick={() => onSelect(p.path)}
         onHover={onHover}
       />

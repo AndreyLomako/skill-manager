@@ -74,3 +74,31 @@ describe('listInstalled', () => {
     expect(await listInstalled({ kind: 'global' }, ['claude', 'codex'], await tmpDir(), [])).toEqual([]);
   });
 });
+
+describe('listInstalled: дедупликация плагинов по платформе', () => {
+  async function twoCaseVariants() {
+    const root = await tmpDir();
+    const lower = path.join(root, 'plugins', 'sp');
+    const upper = path.join(root, 'plugins', 'SP');
+    await writeFiles(root, {
+      'home/.claude/plugins/installed_plugins.json': JSON.stringify({
+        version: 2,
+        plugins: { 'sp@m': [{ installPath: lower }, { installPath: upper }] },
+      }),
+      'home/.claude/settings.json': JSON.stringify({ enabledPlugins: { 'sp@m': true } }),
+      'plugins/sp/skills/one/SKILL.md': md('one'),
+      'plugins/SP/skills/one/SKILL.md': md('one'),
+    });
+    return path.join(root, 'home');
+  }
+
+  it('linux: пути, различающиеся регистром, — разные каталоги, оба сохраняются', async () => {
+    const res = await listInstalled({ kind: 'global' }, ['claude'], await twoCaseVariants(), [], 'linux');
+    expect(res.filter((s) => s.kind === 'plugin')).toHaveLength(2);
+  });
+
+  it('win32: те же пути считаются одним каталогом', async () => {
+    const res = await listInstalled({ kind: 'global' }, ['claude'], await twoCaseVariants(), [], 'win32');
+    expect(res.filter((s) => s.kind === 'plugin')).toHaveLength(1);
+  });
+});

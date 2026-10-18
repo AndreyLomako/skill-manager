@@ -1,6 +1,7 @@
 import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readFrontmatter } from './frontmatter';
+import { pathKey, type Platform } from './platform';
 import { getInstalled } from './installer';
 import { isReservedSkillName, skillsRoot } from './skill-targets';
 import type { AgentId, CatalogSkill, InstalledKind, InstalledSkill, Scope } from './types';
@@ -50,7 +51,7 @@ async function readJson(file: string): Promise<any> {
   }
 }
 
-async function pluginSkills(home: string): Promise<InstalledSkill[]> {
+async function pluginSkills(home: string, platform: Platform): Promise<InstalledSkill[]> {
   const installed = await readJson(path.join(home, '.claude', 'plugins', 'installed_plugins.json'));
   const settings = await readJson(path.join(home, '.claude', 'settings.json'));
   const enabled: Record<string, unknown> = settings?.enabledPlugins ?? {};
@@ -63,8 +64,9 @@ async function pluginSkills(home: string): Promise<InstalledSkill[]> {
     for (const r of records) {
       if (typeof r?.installPath !== 'string') continue;
       for (const s of await collect(path.join(r.installPath, 'skills'), 'claude', 'plugin', { plugin })) {
-        if (seen.has(s.dir.toLowerCase())) continue;
-        seen.add(s.dir.toLowerCase());
+        const key = pathKey(s.dir, platform);
+        if (seen.has(key)) continue;
+        seen.add(key);
         out.push(s);
       }
     }
@@ -77,6 +79,7 @@ export async function listInstalled(
   agents: AgentId[],
   home: string,
   catalog: CatalogSkill[],
+  platform: Platform = process.platform,
 ): Promise<InstalledSkill[]> {
   const out: InstalledSkill[] = [];
   for (const agent of agents) {
@@ -90,7 +93,7 @@ export async function listInstalled(
       for (const bucket of await subdirs(path.join(root, 'synced'))) {
         out.push(...(await collect(path.join(root, 'synced', bucket), 'claude', 'synced')));
       }
-      out.push(...(await pluginSkills(home)));
+      out.push(...(await pluginSkills(home, platform)));
     } else {
       for (const sys of [path.join(home, '.codex', 'skills', '.system'), path.join(root, '.system')]) {
         if (await exists(sys)) out.push(...(await collect(sys, 'codex', 'system')));

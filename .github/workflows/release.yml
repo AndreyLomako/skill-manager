@@ -1,7 +1,9 @@
 name: Release
 
-# Тег v* (`npm version minor` + `git push --follow-tags`): каждая ОС собирает свои файлы
-# и electron-builder выкладывает их вместе с latest*.yml в один релиз GitHub для этого тега.
+# Тег v* (`npm version minor` + `git push --follow-tags`).
+# 1) create: один раз создаёт черновик релиза для тега (иначе три сборки гоняются за его созданием);
+# 2) build: каждая ОС собирает свои файлы, electron-builder докладывает их и latest*.yml в этот черновик;
+# 3) publish: когда все сборки успешны, черновик публикуется.
 on:
   push:
     tags:
@@ -11,7 +13,17 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  create:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --title "$GITHUB_REF_NAME" --notes "Skill Manager $GITHUB_REF_NAME"
+
+  build:
+    needs: create
     strategy:
       fail-fast: false
       matrix:
@@ -28,3 +40,13 @@ jobs:
       - run: npm run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false

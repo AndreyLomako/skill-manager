@@ -148,13 +148,13 @@ describe('isVsCodeRunning', () => {
     expect(calls).toEqual([['tasklist', ['/FI', 'IMAGENAME eq Code.exe', '/NH']]]);
   });
 
-  it('darwin: pgrep -x Code; linux: pgrep -x code', async () => {
+  it('darwin: pgrep -f VS Code.app; linux: pgrep -x code', async () => {
     const calls: Array<[string, string[]]> = [];
     const run = async (c: string, a: string[]) => (calls.push([c, a]), { code: 0, stdout: '1\n' });
     expect(await isVsCodeRunning('darwin', run)).toBe(true);
     expect(await isVsCodeRunning('linux', run)).toBe(true);
     expect(calls).toEqual([
-      ['pgrep', ['-x', 'Code']],
+      ['pgrep', ['-f', 'Visual Studio Code.app/Contents/MacOS/']],
       ['pgrep', ['-x', 'code']],
     ]);
     expect(await isVsCodeRunning('linux', async () => ({ code: 1, stdout: '' }))).toBe(false);

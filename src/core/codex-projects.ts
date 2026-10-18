@@ -76,5 +76,9 @@ export async function readCodexProjects(
 }
 
 export function isCodexRunning(platform: NodeJS.Platform = process.platform, run?: RunFn): Promise<boolean> {
-  return isProcessRunning({ win32: 'codex.exe', darwin: 'codex', linux: 'codex' }, platform, run);
+  return isProcessRunning({
+      win32: 'codex.exe',
+      darwin: { pgrep: ['-ix', 'codex'] },
+      linux: { pgrep: ['-ix', 'codex'] },
+    }, platform, run);
 }
