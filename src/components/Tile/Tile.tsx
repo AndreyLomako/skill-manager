@@ -37,6 +37,7 @@ export function Tile({
       type="button"
       className={cls}
       style={{ ...style, '--i': index } as CSSProperties}
+      title={hint}
       aria-pressed={selected}
       aria-disabled={disabled}
       onClick={disabled ? undefined : onClick}

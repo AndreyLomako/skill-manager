@@ -14,6 +14,7 @@
   box-shadow: 0 8px 30px rgba(5, 5, 30, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   color: var(--color-text);
   text-align: left;
+  isolation: isolate;
   animation: tile-in 0.6s var(--ease-out) both;
   animation-delay: calc(var(--i, 0) * 45ms);
   transition: background 0.25s, box-shadow 0.3s, transform 0.25s var(--ease-out);
@@ -37,6 +38,20 @@
   animation: tile-shimmer 6s linear infinite;
 }
 
+/* Заливка выбранной плитки отдельным слоем: градиент нельзя плавно анимировать
+   через background, а opacity — можно */
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(61, 91, 255, 0.3), rgba(157, 77, 255, 0.28));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease-out);
+}
+
 .tile:not(.tile--disabled):hover {
   background: var(--glass-bg-hover);
   transform: translateY(-2px);
@@ -46,15 +61,12 @@
 .tile:not(.tile--disabled):active { transform: scale(0.97); }
 .tile:focus-visible { outline: 2px solid var(--color-violet); outline-offset: 2px; }
 
-.tile--selected {
-  background: linear-gradient(135deg, rgba(61, 91, 255, 0.3), rgba(157, 77, 255, 0.28));
-  box-shadow: 0 10px 34px rgba(157, 77, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
-}
-.tile--selected::before { opacity: 1; }
+.tile--selected,
 .tile--selected:not(.tile--disabled):hover {
-  background: linear-gradient(135deg, rgba(61, 91, 255, 0.3), rgba(157, 77, 255, 0.28));
   box-shadow: 0 10px 34px rgba(157, 77, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
+.tile--selected::before,
+.tile--selected::after { opacity: 1; }
 .tile--selected:not(.tile--disabled):hover::before { opacity: 1; }
 
 .tile--disabled { cursor: default; background: rgba(255, 255, 255, 0.035); }
@@ -68,20 +80,20 @@
 
 .tile__body { display: flex; flex-direction: column; min-width: 0; }
 .tile__title { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Подсказка всегда занимает одну строку: при наведении меняется только цвет,
+   размер плитки не меняется и соседей не сдвигает */
 .tile__hint {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
+  margin-top: 2px;
   font-size: 12px;
   line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--color-text-dim);
-  transition: max-height 0.35s var(--ease-out), opacity 0.3s;
+  transition: color 0.25s var(--ease-out);
 }
 .tile:hover .tile__hint,
-.tile:focus-visible .tile__hint { max-height: 54px; opacity: 1; margin-top: 2px; }
+.tile:focus-visible .tile__hint { color: rgba(238, 240, 255, 0.88); }
 
 .tile__badge {
   flex: none;
