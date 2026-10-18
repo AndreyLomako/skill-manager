@@ -39,10 +39,12 @@ export const fragmentShader = /* glsl */ `
     float wave = (noise(dir * 1.8 + t) - 0.5) * 0.10 + (noise(dir * 3.5 - t * 1.3) - 0.5) * 0.05;
 
     vec2 m = (uMouse - uCenter) / uRadius;
-    float mAng = atan(m.y, m.x);
+    float mLen = length(m);
+    // atan(0, 0) не определён: при курсоре в центре выступ не рисуем.
+    float mAng = mLen < 1e-4 ? 0.0 : atan(m.y, m.x);
     float dAng = abs(atan(sin(ang - mAng), cos(ang - mAng)));
-    float prox = smoothstep(2.2, 0.8, length(m)) * uMotion;
-    float bump = exp(-dAng * dAng * 6.0) * 0.06 * prox;
+    float prox = (1.0 - smoothstep(0.8, 2.2, mLen)) * uMotion;
+    float bump = mLen < 1e-4 ? 0.0 : exp(-dAng * dAng * 6.0) * 0.06 * prox;
 
     float edge = 1.0 + wave + bump + uPulse * 0.04 * sin(ang * 6.0 + uTime * 8.0);
     float d = r - edge;
