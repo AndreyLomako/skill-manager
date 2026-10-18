@@ -18,6 +18,19 @@ const PULSES: Record<BlobPulse, { strength: number; color: [number, number, numb
   error: { strength: 1.0, color: [1.0, 0.42, 0.54] },
 };
 
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|basic render|software/i;
+
+function isSoftwareRenderer(renderer: THREE.WebGLRenderer): boolean {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
+    return typeof name === 'string' && SOFTWARE_RENDERER.test(name);
+  } catch {
+    return false;
+  }
+}
+
 export function Blob({ ref, className }: { ref?: Ref<BlobHandle>; className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pulseRef = useRef({ value: 0, color: new THREE.Color(0.75, 0.45, 1.0) });
@@ -44,6 +57,14 @@ export function Blob({ ref, className }: { ref?: Ref<BlobHandle>; className?: st
     try {
       renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: false });
     } catch {
+      setFallback(true);
+      return;
+    }
+    // Программный WebGL (SwiftShader, llvmpipe…) рендерит шейдер на CPU и забирает главный поток
+    // настолько, что страница перестаёт успевать загружать данные — используем CSS-заглушку.
+    if (isSoftwareRenderer(renderer)) {
+      renderer.forceContextLoss();
+      renderer.dispose();
       setFallback(true);
       return;
     }
@@ -95,8 +116,14 @@ export function Blob({ ref, className }: { ref?: Ref<BlobHandle>; className?: st
     window.addEventListener('pointermove', onMove);
 
     let frame = 0;
+    let running = false;
     let last = performance.now();
     const tick = (now: number) => {
+      // Во скрытой вкладке цикл останавливается; возобновляется по visibilitychange
+      if (document.hidden) {
+        running = false;
+        return;
+      }
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       uniforms.uTime.value += dt;
@@ -110,10 +137,27 @@ export function Blob({ ref, className }: { ref?: Ref<BlobHandle>; className?: st
       renderer.render(scene, camera);
       frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
+    const start = () => {
+      if (running || document.hidden) return;
+      running = true;
+      last = performance.now();
+      frame = requestAnimationFrame(tick);
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(frame);
+        running = false;
+      } else {
+        start();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    start();
 
     return () => {
       cancelAnimationFrame(frame);
+      running = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pointermove', onMove);
       observer.disconnect();
       geometry.dispose();
