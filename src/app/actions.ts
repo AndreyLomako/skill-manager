@@ -39,7 +39,7 @@ export async function addProjectAction(
     const saved = await addManualProject(appPaths(), projectPath);
     return { ok: true, path: saved, result: await listProjects(appPaths()) };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -86,6 +86,7 @@ export async function installSkillsAction(
   overwrite = false,
 ): Promise<InstallResult[]> {
   const paths = appPaths();
+  ids = Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [];
   const list = parseAgents(agents);
   const checked = await checkScope(paths, scope);
   if (!checked) {
@@ -117,13 +118,14 @@ export async function removeSkillAction(
   name: string,
 ): Promise<{ ok: true; entry: TrashEntry } | { ok: false; error: string }> {
   const paths = appPaths();
+  if (typeof name !== 'string') return { ok: false, error: 'Некорректное имя' };
   const checked = await checkScope(paths, scope);
   if (!checked) return { ok: false, error: UNKNOWN_SCOPE };
   if (agent !== 'claude' && agent !== 'codex') return { ok: false, error: 'Неизвестный агент' };
   try {
     return { ok: true, entry: await removeSkill(checked, agent, name, paths.home, paths.trashDir) };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -131,6 +133,7 @@ export async function restoreSkillAction(
   id: string,
 ): Promise<{ ok: true; entry: TrashEntry } | { ok: false; error: string }> {
   const paths = appPaths();
+  if (typeof id !== 'string') return { ok: false, error: 'Некорректный id' };
   try {
     const entry = await restoreFromTrash(paths.trashDir, id, {
       home: paths.home,
@@ -138,7 +141,7 @@ export async function restoreSkillAction(
     });
     return { ok: true, entry };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -150,7 +153,7 @@ export async function addUserSkillAction(
     const { skillId } = await addUserSkill(paths.userDir, input, (src, skillPath) => verifyUserSkill(paths, src, skillPath));
     return { ok: true, skillId, catalog: await getCatalogAction(false) };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
 

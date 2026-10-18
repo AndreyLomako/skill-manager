@@ -9,6 +9,7 @@ interface Props {
   items: InstalledSkill[];
   showAgent: boolean;
   loading: boolean;
+  error?: string;
   onRemove(item: InstalledSkill): void;
   onUpdate(name: string): void;
   onHover(): void;
@@ -34,11 +35,11 @@ function tileState(item: InstalledSkill): Pick<TileProps, 'marker' | 'tone' | 'd
   return { marker: '•' };
 }
 
-export function InstalledTiles({ items, showAgent, loading, onRemove, onUpdate, onHover }: Props) {
+export function InstalledTiles({ items, showAgent, loading, error, onRemove, onUpdate, onHover }: Props) {
   if (items.length === 0) {
     return (
       <div className={styles.installed}>
-        <p className={styles.installed__empty}>{loading ? 'Загружаю…' : 'Здесь пока ничего не установлено'}</p>
+        <p className={styles.installed__empty}>{loading ? 'Загружаю…' : (error ?? 'Здесь пока ничего не установлено')}</p>
       </div>
     );
   }

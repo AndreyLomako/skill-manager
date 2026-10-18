@@ -76,7 +76,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const [adding, setAdding] = useState(false);
   const [installedList, setInstalledList] = useState<InstalledSkill[]>([]);
   const [listLoading, setListLoading] = useState(false);
-  const [removing, setRemoving] = useState<InstalledSkill | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<{ item: InstalledSkill; scope: Scope; scopeKey: string | null } | null>(null);
   const [noticeBusy, setNoticeBusy] = useState(false);
 
   const activePathRef = useRef(activePath);
@@ -139,9 +140,12 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const refreshList = useCallback(async (target: Scope | null, choice: AgentChoice) => {
     const req = ++listReq.current;
     setListLoading(true);
+    setListError(null);
     try {
       const result = target ? await listInstalledAction(target, agentsOf(choice)) : [];
       if (req === listReq.current) setInstalledList(result);
+    } catch (e) {
+      if (req === listReq.current) setListError(e instanceof Error ? e.message : String(e));
     } finally {
       if (req === listReq.current) setListLoading(false);
     }
@@ -166,6 +170,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   // Диалог обновления относится к конкретному проекту и выбору агента
   useEffect(() => {
     setUpdateId(null);
+    setRemoving(null);
   }, [scopeKey, agentChoice]);
 
   // Список «Установлено»: при входе в категорию и смене проекта/агента
@@ -245,10 +250,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   };
 
   const confirmRemove = async () => {
-    const item = removing;
-    if (!item || !scope) return;
-    const targetScope = scope;
-    const targetKey = scopeKey;
+    if (!removing) return;
+    const { item, scope: targetScope, scopeKey: targetKey } = removing;
     setRemoving(null);
     try {
       const res = await removeSkillAction(targetScope, item.agent, item.name);
@@ -370,7 +373,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
               items={installedList}
               showAgent={agentChoice === 'both'}
               loading={listLoading}
-              onRemove={setRemoving}
+              error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
+              onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
               onUpdate={setUpdateId}
               onHover={hover}
             />
@@ -459,7 +463,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       {removing && (
         <Dialog title="Удалить скилл?" onClose={() => setRemoving(null)}>
           <p className={styles.dialog__text}>
-            {removing.title} будет перенесён в корзину приложения. Вернуть можно сразу из уведомления; через 30 дней корзина очищается.
+            {removing.item.title} будет перенесён в корзину приложения. Вернуть можно сразу из уведомления; через 30 дней корзина очищается.
           </p>
           <div className={styles.dialog__actions}>
             <Tile title="Удалить" marker="🗑" tone="warning" onClick={() => void confirmRemove()} />
