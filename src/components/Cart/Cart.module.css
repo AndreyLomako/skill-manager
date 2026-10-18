@@ -28,6 +28,8 @@
 .cart__summary:disabled { cursor: default; }
 .cart__project { font-weight: 600; }
 .cart__counts { font-size: 13px; color: var(--color-text-dim); }
+.cart__agents { display: flex; gap: 6px; }
+.cart__agent { min-height: 40px; padding-block: 6px; }
 .cart__install {
   padding: 14px 28px;
   border-radius: 16px;

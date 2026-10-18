@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { GLOBAL_PROJECT, sourcesLabel } from '@/core/selection';
 import type { Project } from '@/core/types';
 import { Tile } from '../Tile/Tile';
 import styles from './ProjectList.module.css';
@@ -51,7 +52,7 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
         key={p.path}
         index={offset + i}
         title={p.name}
-        hint={p.path}
+        hint={sourcesLabel(p.sources) ? `${sourcesLabel(p.sources)} — ${p.path}` : p.path}
         marker={p.open ? '●' : '○'}
         tone={p.open ? 'success' : 'default'}
         selected={p.path === activePath}
@@ -62,6 +63,14 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
 
   return (
     <aside className={styles.projects}>
+      <Tile
+        title="Глобально"
+        hint="все проекты · ~/.claude и ~/.agents"
+        marker="🌐"
+        selected={activePath === GLOBAL_PROJECT}
+        onClick={() => onSelect(GLOBAL_PROJECT)}
+        onHover={onHover}
+      />
       <h2 className={styles.projects__title}>Открыто в VS Code</h2>
       {open.length > 0 ? (
         <div className={styles.projects__list}>{renderTiles(open, 0)}</div>

@@ -9,8 +9,20 @@ import {
   installSkillsAction,
 } from '@/app/actions';
 import type { ProjectsResult } from '@/core/projects';
-import { countByCategory, MY_SKILLS, pruneSelection, skillsForCategory, toggleSelection } from '@/core/selection';
-import type { Catalog, InstallResult, InstalledState } from '@/core/types';
+import {
+  AGENT_LABEL,
+  GLOBAL_PROJECT,
+  agentsOf,
+  countByCategory,
+  defaultAgentChoice,
+  mergeInstalled,
+  MY_SKILLS,
+  pruneSelection,
+  skillsForCategory,
+  toggleSelection,
+  type AgentChoice,
+} from '@/core/selection';
+import type { AgentId, Catalog, InstallResult, InstalledState, Scope } from '@/core/types';
 import { AddSkillDialog } from '../AddSkillDialog/AddSkillDialog';
 import { Blob, type BlobHandle, type BlobPulse } from '../Blob/Blob';
 import { Cart } from '../Cart/Cart';
@@ -46,7 +58,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   );
   const [category, setCategory] = useState(() => initialCatalog.categories[0]?.id ?? MY_SKILLS);
   const [selected, setSelected] = useState<string[]>([]);
-  const [installed, setInstalled] = useState<InstalledState>({});
+  const [installed, setInstalled] = useState<Partial<Record<AgentId, InstalledState>>>({});
+  const [agentChoice, setAgentChoice] = useState<AgentChoice>('claude');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -54,12 +67,22 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const [adding, setAdding] = useState(false);
 
   const activePathRef = useRef(activePath);
+  const agentRef = useRef(agentChoice);
+  const projectsRef = useRef(projects);
   const installedReq = useRef(0);
   const installing = useRef(false);
 
   useEffect(() => {
     activePathRef.current = activePath;
   }, [activePath]);
+
+  useEffect(() => {
+    agentRef.current = agentChoice;
+  }, [agentChoice]);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
 
   const pulse = useCallback((kind: BlobPulse) => blob.current?.pulse(kind), []);
   const hover = useCallback(() => pulse('hover'), [pulse]);
@@ -74,31 +97,41 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
 
   useEffect(() => {
     const list = projects.projects;
+    if (activePath === GLOBAL_PROJECT) return;
     if (activePath !== null && list.some((p) => p.path === activePath)) return;
     const next = list.find((p) => p.active)?.path ?? list[0]?.path ?? null;
     if (next !== activePath) setActivePath(next);
   }, [projects, activePath]);
 
-  const refreshInstalled = useCallback(async (projectPath: string | null) => {
+  const project = projects.projects.find((p) => p.path === activePath) ?? null;
+  const scopeKey = activePath === GLOBAL_PROJECT ? 'global' : project ? project.path : null;
+  const scope = useMemo<Scope | null>(
+    () => (scopeKey === null ? null : scopeKey === 'global' && activePath === GLOBAL_PROJECT ? { kind: 'global' } : { kind: 'project', path: scopeKey }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scopeKey],
+  );
+
+  const refreshInstalled = useCallback(async (target: Scope | null, choice: AgentChoice) => {
     const req = ++installedReq.current;
-    const result = projectPath
-      ? ((await getInstalledAction({ kind: 'project', path: projectPath }, ['claude'])).claude ?? {})
-      : {};
+    const result = target ? await getInstalledAction(target, agentsOf(choice)) : {};
     if (req === installedReq.current) setInstalled(result);
   }, []);
 
-  // Смена проекта: не показываем статусы и диалог обновления от предыдущего проекта
+  // Смена проекта: не показываем статусы и диалог обновления от предыдущего проекта,
+  // агент по умолчанию берётся из источников проекта
   useEffect(() => {
     setInstalled({});
     setUpdateId(null);
+    const p = projectsRef.current.projects.find((x) => x.path === activePath);
+    setAgentChoice(defaultAgentChoice(p?.sources ?? null));
   }, [activePath]);
 
   useEffect(() => {
-    refreshInstalled(activePath).catch(() => undefined);
+    refreshInstalled(scope, agentChoice).catch(() => undefined);
     return () => {
       installedReq.current++;
     };
-  }, [activePath, catalog, refreshInstalled]);
+  }, [scope, agentChoice, catalog, refreshInstalled]);
 
   useEffect(() => {
     if (!notice) return;
@@ -106,7 +139,6 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const project = projects.projects.find((p) => p.path === activePath) ?? null;
   const counts = useMemo(() => countByCategory(selected, catalog.skills), [selected, catalog.skills]);
   const visible = useMemo(() => skillsForCategory(catalog.skills, category), [catalog.skills, category]);
   const selectedSkills = useMemo(() => catalog.skills.filter((s) => selected.includes(s.id)), [catalog.skills, selected]);
@@ -118,23 +150,31 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   };
 
   const install = async (ids: string[], overwrite: boolean) => {
-    if (installing.current || !project || ids.length === 0) return;
-    const targetPath = project.path;
-    const targetName = project.name;
+    if (installing.current || !scope || ids.length === 0) return;
+    const targetScope = scope;
+    const targetKey = scopeKey;
+    const targetChoice = agentChoice;
+    const targetAgents = agentsOf(targetChoice);
+    const targetName = targetScope.kind === 'global' ? 'Глобально' : (project?.name ?? '');
     installing.current = true;
     setBusy(true);
     try {
-      const results = await installSkillsAction({ kind: 'project', path: targetPath }, ['claude'], ids, overwrite);
+      const results = await installSkillsAction(targetScope, targetAgents, ids, overwrite);
       const failed = results.filter((r) => r.status === 'error');
       const done = new Set(results.filter((r) => r.status !== 'error').map((r) => r.skillId));
       setSelected((sel) => sel.filter((id) => !done.has(id)));
       pulse(failed.length > 0 ? 'error' : 'success');
       setNotice({
         tone: failed.length > 0 ? 'error' : 'success',
-        title: failed.length > 0 ? `Готово с ошибками (${failed.length})` : `Установлено в «${targetName}»`,
-        lines: results.map((r) => `${titleOf(r.skillId)} — ${STATUS_TEXT[r.status]}${r.message ? `: ${r.message}` : ''}`),
+        title:
+          failed.length > 0
+            ? `Готово с ошибками (${failed.length})`
+            : targetScope.kind === 'global'
+              ? 'Установлено глобально'
+              : `Установлено в «${targetName}»`,
+        lines: results.map((r) => `${titleOf(r.skillId)}${targetChoice === 'both' && r.agent ? ` (${AGENT_LABEL[r.agent]})` : ''} — ${STATUS_TEXT[r.status]}${r.message ? `: ${r.message}` : ''}`),
         hint: results.some((r) => r.status === 'installed')
-          ? 'Перезапустите сессию Claude Code в этом проекте, чтобы скиллы подхватились.'
+          ? 'Скиллы подхватятся автоматически. Если папки skills раньше не было — выполните /reload-skills в Claude или перезапустите Codex.'
           : undefined,
       });
     } catch (e) {
@@ -145,9 +185,10 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       installing.current = false;
       setBusy(false);
     }
-    if (activePathRef.current === targetPath) {
+    const currentKey = activePathRef.current === GLOBAL_PROJECT ? 'global' : activePathRef.current;
+    if (currentKey === targetKey && agentRef.current === targetChoice) {
       try {
-        await refreshInstalled(targetPath);
+        await refreshInstalled(targetScope, targetChoice);
       } catch {
         // ошибка обновления статуса не должна выглядеть как ошибка установки
       }
@@ -228,7 +269,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
             key={category}
             skills={visible}
             selected={selected}
-            installed={installed}
+            installed={mergeInstalled(installed, agentsOf(agentChoice))}
             showAdd={category === MY_SKILLS}
             onToggle={toggle}
             onUpdate={setUpdateId}
@@ -246,7 +287,9 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
       </main>
 
       <Cart
-        project={project}
+        scopeLabel={scope === null ? null : scope.kind === 'global' ? 'Глобально (все проекты)' : `Проект: ${project?.name ?? ''}`}
+        agent={agentChoice}
+        onAgentChange={setAgentChoice}
         selected={selectedSkills}
         categories={catalog.categories}
         busy={busy}
@@ -267,10 +310,10 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         </div>
       )}
 
-      {updateId && project && (
+      {updateId && scope && (
         <Dialog title="Обновить скилл?" onClose={() => setUpdateId(null)}>
           <p className={styles.dialog__text}>
-            «{titleOf(updateId)}» в проекте «{project.name}» отличается от версии в каталоге. Установленная копия будет заменена.
+            «{titleOf(updateId)}» {scope.kind === 'global' ? 'в глобальных скиллах' : `в проекте «${project?.name ?? ''}»`} отличается от версии в каталоге. Установленная копия будет заменена.
           </p>
           <div className={styles.dialog__actions}>
             <Tile
