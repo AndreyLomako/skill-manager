@@ -11,6 +11,7 @@ import {
 import type { ProjectsResult } from '@/core/projects';
 import { countByCategory, MY_SKILLS, pruneSelection, skillsForCategory, toggleSelection } from '@/core/selection';
 import type { Catalog, InstallResult, InstalledState } from '@/core/types';
+import { AddSkillDialog } from '../AddSkillDialog/AddSkillDialog';
 import { Blob, type BlobHandle, type BlobPulse } from '../Blob/Blob';
 import { Cart } from '../Cart/Cart';
 import { CategoryRing } from '../CategoryRing/CategoryRing';
@@ -50,6 +51,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [updateId, setUpdateId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const activePathRef = useRef(activePath);
   const installedReq = useRef(0);
@@ -219,10 +221,10 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
             skills={visible}
             selected={selected}
             installed={installed}
-            showAdd={false}
+            showAdd={category === MY_SKILLS}
             onToggle={toggle}
             onUpdate={setUpdateId}
-            onAdd={() => undefined}
+            onAdd={() => setAdding(true)}
             onHover={hover}
           />
         </div>
@@ -277,6 +279,20 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
             <Tile title="Отмена" onClick={() => setUpdateId(null)} />
           </div>
         </Dialog>
+      )}
+
+      {adding && (
+        <AddSkillDialog
+          categories={catalog.categories}
+          onClose={() => setAdding(false)}
+          onError={() => pulse('error')}
+          onAdded={(next) => {
+            setCatalog(next);
+            setAdding(false);
+            setCategory(MY_SKILLS);
+            pulse('success');
+          }}
+        />
       )}
     </div>
   );

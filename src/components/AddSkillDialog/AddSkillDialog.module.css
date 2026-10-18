@@ -1,0 +1,5 @@
+.form { display: flex; flex-direction: column; gap: 14px; }
+.form__row { display: flex; flex-wrap: wrap; gap: 8px; }
+.form__label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--color-text-dim); }
+.form__error { font-size: 13px; color: var(--color-error); }
+.form__actions { display: flex; gap: 10px; margin-top: 6px; }
