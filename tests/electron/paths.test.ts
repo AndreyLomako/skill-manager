@@ -4,10 +4,19 @@ import net from 'node:net';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { resolveRuntime, findFreePort } = require('../../electron/paths.cjs') as {
+const { resolveRuntime, findFreePort, envWithoutRunAsNode } = require('../../electron/paths.cjs') as {
   resolveRuntime: (o: { isPackaged: boolean; resourcesPath: string; appRoot: string; userData: string }) => Record<string, string>;
   findFreePort: (start: number, end: number) => Promise<number>;
+  envWithoutRunAsNode: (env: Record<string, string | undefined>) => Record<string, string | undefined>;
 };
+
+describe('envWithoutRunAsNode', () => {
+  it('убирает ELECTRON_RUN_AS_NODE (терминал VS Code), остальное не трогает и не мутирует исходник', () => {
+    const env = { ELECTRON_RUN_AS_NODE: '1', PATH: 'C:\\bin', APPDATA: 'C:\\a' };
+    expect(envWithoutRunAsNode(env)).toEqual({ PATH: 'C:\\bin', APPDATA: 'C:\\a' });
+    expect(env.ELECTRON_RUN_AS_NODE).toBe('1');
+  });
+});
 
 describe('resolveRuntime', () => {
   const base = {

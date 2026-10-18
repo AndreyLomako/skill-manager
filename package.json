@@ -11,7 +11,7 @@
     "app": "node scripts/launch.mjs",
     "test": "vitest run",
     "probe": "node scripts/probe-vscode.mjs",
-    "electron:dev": "next build && node scripts/prepare-standalone.mjs && electron .",
+    "electron:dev": "next build && node scripts/prepare-standalone.mjs && node scripts/electron-dev.mjs",
     "dist": "next build && node scripts/prepare-standalone.mjs && electron-builder --win nsis --x64"
   },
   "devDependencies": {
@@ -70,6 +70,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableCookieEncryption": true
     }
-  }
+  },
+  "description": "Установка скиллов Claude Code и Codex в проекты",
+  "author": "Andrey Lomako"
 }

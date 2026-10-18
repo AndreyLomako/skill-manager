@@ -48,4 +48,11 @@ async function findFreePort(start, end) {
   throw new Error(`Нет свободного порта в диапазоне ${start}–${end}`);
 }
 
-module.exports = { resolveRuntime, findFreePort };
+// Терминалы VS Code выставляют ELECTRON_RUN_AS_NODE=1, и Electron тогда стартует как голый Node.
+function envWithoutRunAsNode(env) {
+  const copy = { ...env };
+  delete copy.ELECTRON_RUN_AS_NODE;
+  return copy;
+}
+
+module.exports = { resolveRuntime, findFreePort, envWithoutRunAsNode };

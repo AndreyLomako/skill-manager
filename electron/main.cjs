@@ -1,14 +1,31 @@
 'use strict';
 // Main-процесс Skill Manager: запускает Next standalone-сервер в utility-процессе и показывает его в окне.
-const { app, BrowserWindow, dialog, shell, utilityProcess } = require('electron');
+const electron = require('electron');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { resolveRuntime, findFreePort } = require('./paths.cjs');
+const { resolveRuntime, findFreePort, envWithoutRunAsNode } = require('./paths.cjs');
+
+// Запущены как Node (ELECTRON_RUN_AS_NODE=1 из терминала VS Code): require('electron') отдаёт строку.
+// Перезапускаемся как приложение без этой переменной. В собранном exe это отключено фьюзом runAsNode.
+if (typeof electron === 'string' || !electron.app) {
+  require('node:child_process')
+    .spawn(process.execPath, process.argv.slice(1), {
+      env: envWithoutRunAsNode(process.env),
+      detached: true,
+      stdio: 'ignore',
+    })
+    .unref();
+  process.exit(0);
+}
+
+const { app, BrowserWindow, dialog, shell, utilityProcess } = electron;
 
 const APP_NAME = 'Skill Manager';
-const PORT_FIRST = 4317;
-const PORT_LAST = 4417;
+// 4317 занят режимом разработки и `npm run app`: старые вкладки Edge с той версией продолжают
+// опрашивать свой порт, поэтому приложение берёт отдельный диапазон.
+const PORT_FIRST = 4327;
+const PORT_LAST = 4427;
 const SERVER_TIMEOUT_MS = 30_000;
 const BG_COLOR = '#12071f';
 
