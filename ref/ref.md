@@ -4,7 +4,7 @@
 > Визуальный референс: [ref.png](ref.png)
 > Версия ТЗ: 0.1 (черновик) · 2026-10-18
 >
-> **Уточнено в дизайне MVP** ([docs/superpowers/specs/2026-10-18-skill-manager-mvp-design.md](../docs/superpowers/specs/2026-10-18-skill-manager-mvp-design.md)): стек — Next.js + React + Server Actions + Three.js; вместо PostgreSQL в Docker — JSON-файлы (базовый каталог в git на GitVerse + пользовательский слой, который обновления не перетирают); каталог — манифест со ссылками на репозитории GitHub/GitVerse.
+> **Уточнено в дизайне MVP** ([docs/superpowers/specs/2026-10-18-skill-manager-mvp-design.md](../docs/superpowers/specs/2026-10-18-skill-manager-mvp-design.md)): стек — Next.js + React + Server Actions + Three.js; вместо PostgreSQL в Docker — JSON-файлы (базовый каталог в git на GitVerse + пользовательский слой в папке `user/` внутри приложения, она в `.gitignore`, поэтому обновления её не перетирают); каталог — манифест со ссылками на репозитории GitHub/GitVerse.
 
 ---
 
