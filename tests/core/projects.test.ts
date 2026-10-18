@@ -24,6 +24,8 @@ async function setup() {
     userDir: path.join(root, 'user'),
     cacheDir: path.join(root, '.cache'),
     vscodeStorage: path.join(root, 'storage.json'),
+    home: root,
+    trashDir: path.join(root, 'user', 'trash'),
   };
   await writeFiles(root, {
     'storage.json': JSON.stringify({

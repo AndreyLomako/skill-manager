@@ -28,6 +28,8 @@ async function setup(baseManifest: object, user?: object | string, extra: Record
     userDir: path.join(root, 'user'),
     cacheDir: path.join(root, '.cache'),
     vscodeStorage: path.join(root, 'storage.json'),
+    home: root,
+    trashDir: path.join(root, 'user', 'trash'),
   };
   await writeFiles(root, {
     'catalog/catalog.json': JSON.stringify(baseManifest),
@@ -88,7 +90,7 @@ describe('loadCatalog', () => {
   it('нет базового каталога — CatalogError', async () => {
     const root = await tmpDir();
     await expect(
-      loadCatalog({ baseCatalogDir: path.join(root, 'none'), userDir: root, cacheDir: root, vscodeStorage: '' }),
+      loadCatalog({ baseCatalogDir: path.join(root, 'none'), userDir: root, cacheDir: root, vscodeStorage: '', home: root, trashDir: path.join(root, 'user', 'trash') }),
     ).rejects.toBeInstanceOf(CatalogError);
   });
 
