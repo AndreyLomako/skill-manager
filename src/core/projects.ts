@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { AppPaths } from './paths';
 import type { Project } from './types';
@@ -29,13 +29,24 @@ function uniq(list: string[]): string[] {
 }
 
 export async function loadSettings(userDir: string): Promise<Settings> {
+  const file = path.join(userDir, SETTINGS_FILE);
+  let text: string;
   try {
-    const json = JSON.parse(await readFile(path.join(userDir, SETTINGS_FILE), 'utf8'));
-    const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
-    return { recent: list(json.recent), manual: list(json.manual) };
+    text = await readFile(file, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { recent: [], manual: [] };
+    throw e;
+  }
+  let json: { recent?: unknown; manual?: unknown };
+  try {
+    json = JSON.parse(text);
+    if (json === null || typeof json !== 'object') throw new SyntaxError('not an object');
   } catch {
+    await rename(file, path.join(userDir, `${SETTINGS_FILE}.corrupt-${Date.now()}`));
     return { recent: [], manual: [] };
   }
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  return { recent: list(json.recent), manual: list(json.manual) };
 }
 
 export async function saveSettings(userDir: string, s: Settings): Promise<void> {

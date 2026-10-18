@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import path from 'node:path';
+import { readdir, readFile } from 'node:fs/promises';
 import {
   addManualProject,
   isKnownProject,
@@ -56,6 +57,24 @@ describe('rememberOpen', () => {
     const res = rememberOpen({ recent, manual: [] }, ['C:\\new', 'C:\\p3']);
     expect(res.recent.slice(0, 3)).toEqual(['C:\\new', 'C:\\p3', 'C:\\p0']);
     expect(res.recent).toHaveLength(20);
+  });
+});
+
+describe('loadSettings', () => {
+  it('отсутствующий файл даёт пустые настройки', async () => {
+    const { paths } = await setup();
+    expect(await loadSettings(paths.userDir)).toEqual({ recent: [], manual: [] });
+  });
+
+  it('битый settings.json сохраняется в резервную копию', async () => {
+    const { root, paths } = await setup();
+    await writeFiles(root, { 'user/settings.json': '{oops' });
+    expect(await loadSettings(paths.userDir)).toEqual({ recent: [], manual: [] });
+    const files = await readdir(paths.userDir);
+    const backup = files.find((f) => f.startsWith('settings.json.corrupt-'));
+    expect(backup).toBeDefined();
+    expect(files).not.toContain('settings.json');
+    expect(await readFile(path.join(paths.userDir, backup!), 'utf8')).toBe('{oops');
   });
 });
 
