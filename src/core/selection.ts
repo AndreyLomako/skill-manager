@@ -1,6 +1,48 @@
-import type { CatalogSkill, CategoryDef } from './types';
+import type { AgentId, CatalogSkill, CategoryDef, InstalledState, InstalledStatus, ProjectSource } from './types';
 
 export const MY_SKILLS = '__my__';
+export const INSTALLED = '__installed__';
+export const GLOBAL_PROJECT = '__global__';
+
+export type AgentChoice = 'claude' | 'codex' | 'both';
+
+export const AGENT_LABEL: Record<AgentId, string> = { claude: 'Claude', codex: 'Codex' };
+
+const SOURCE_LABEL: Record<ProjectSource, string> = {
+  vscode: 'VS Code',
+  claude: 'Claude',
+  codex: 'Codex',
+  manual: 'вручную',
+};
+
+export function agentsOf(choice: AgentChoice): AgentId[] {
+  return choice === 'both' ? ['claude', 'codex'] : [choice];
+}
+
+export function defaultAgentChoice(sources: readonly ProjectSource[] | null): AgentChoice {
+  if (!sources) return 'claude';
+  return sources.includes('codex') && !sources.includes('claude') && !sources.includes('vscode') ? 'codex' : 'claude';
+}
+
+export function mergeInstalled(
+  states: Partial<Record<AgentId, InstalledState>>,
+  agents: readonly AgentId[],
+): InstalledState {
+  const out: InstalledState = {};
+  if (agents.length === 0) return out;
+  const ids = new Set(agents.flatMap((a) => Object.keys(states[a] ?? {})));
+  for (const id of ids) {
+    const list = agents.map((a) => states[a]?.[id]);
+    if (list.some((s) => s === undefined)) continue;
+    const all = list as InstalledStatus[];
+    out[id] = all.every((s) => s === 'up-to-date') ? 'up-to-date' : all.includes('outdated') ? 'outdated' : 'unknown';
+  }
+  return out;
+}
+
+export function sourcesLabel(sources: readonly ProjectSource[]): string {
+  return sources.map((s) => SOURCE_LABEL[s]).join(' · ');
+}
 
 export function toggleSelection(selected: readonly string[], id: string): string[] {
   return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  agentsOf,
   countByCategory,
+  defaultAgentChoice,
   MY_SKILLS,
+  mergeInstalled,
   pruneSelection,
   skillsForCategory,
+  sourcesLabel,
   summarizeByCategory,
   toggleSelection,
 } from '../../src/core/selection';
@@ -40,5 +44,35 @@ describe('selection', () => {
 
   it('summarizeByCategory в порядке категорий', () => {
     expect(summarizeByCategory([skills[1], skills[0]], categories)).toBe('Графика 1 · Видео 1');
+  });
+});
+
+describe('агенты', () => {
+  it('agentsOf', () => {
+    expect(agentsOf('claude')).toEqual(['claude']);
+    expect(agentsOf('both')).toEqual(['claude', 'codex']);
+  });
+
+  it('defaultAgentChoice', () => {
+    expect(defaultAgentChoice(null)).toBe('claude');
+    expect(defaultAgentChoice(['codex'])).toBe('codex');
+    expect(defaultAgentChoice(['codex', 'manual'])).toBe('codex');
+    expect(defaultAgentChoice(['vscode', 'codex'])).toBe('claude');
+    expect(defaultAgentChoice([])).toBe('claude');
+  });
+
+  it('mergeInstalled', () => {
+    const states = {
+      claude: { a: 'up-to-date', b: 'outdated', c: 'up-to-date', d: 'unknown' } as const,
+      codex: { a: 'up-to-date', b: 'up-to-date', d: 'unknown' } as const,
+    };
+    expect(mergeInstalled(states, ['claude', 'codex'])).toEqual({ a: 'up-to-date', b: 'outdated', d: 'unknown' });
+    expect(mergeInstalled(states, ['claude'])).toEqual(states.claude);
+    expect(mergeInstalled({}, ['codex'])).toEqual({});
+  });
+
+  it('sourcesLabel', () => {
+    expect(sourcesLabel(['vscode', 'claude', 'codex', 'manual'])).toBe('VS Code · Claude · Codex · вручную');
+    expect(sourcesLabel([])).toBe('');
   });
 });
