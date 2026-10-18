@@ -11,14 +11,30 @@ const ID = /^\d+-[a-z0-9]+$/;
 const DAY = 24 * 60 * 60 * 1000;
 const exists = (p: string) => access(p).then(() => true, () => false);
 
-async function move(from: string, to: string): Promise<void> {
+export interface FsOps {
+  rename: (from: string, to: string) => Promise<void>;
+  cp: typeof cp;
+  rm: typeof rm;
+}
+const realOps: FsOps = { rename: renameWithRetry, cp, rm };
+
+/** Копия в целевую папку готова, но исходную удалить целиком не удалось. */
+class SourceRemovalError extends Error {
+  readonly copiedToTarget = true;
+}
+
+async function move(from: string, to: string, ops: FsOps = realOps): Promise<void> {
   await mkdir(path.dirname(to), { recursive: true });
   try {
-    await renameWithRetry(from, to);
+    await ops.rename(from, to);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'EXDEV') throw e;
-    await cp(from, to, { recursive: true });
-    await rm(from, { recursive: true, force: true });
+    await ops.cp(from, to, { recursive: true, force: false, errorOnExist: true });
+    try {
+      await ops.rm(from, { recursive: true, force: true });
+    } catch (re) {
+      throw new SourceRemovalError(re instanceof Error ? re.message : String(re), { cause: re });
+    }
   }
 }
 
@@ -27,15 +43,26 @@ export async function moveToTrash(
   dir: string,
   meta: { name: string; agent: AgentId; scope: 'project' | 'global' },
   now = Date.now(),
+  ops: FsOps = realOps,
 ): Promise<TrashEntry> {
   const id = `${now}-${randomBytes(4).toString('hex').slice(0, 6)}`;
   const entry: TrashEntry = { id, ...meta, originalPath: path.resolve(dir), deletedAt: now };
+  const folder = path.join(trashDir, id);
   // Сначала запись, потом перенос: при сбое переноса скилл остаётся на месте, корзину чистим.
-  await writeJsonAtomic(path.join(trashDir, id, ENTRY), entry);
   try {
-    await move(dir, path.join(trashDir, id, SKILL));
+    await writeJsonAtomic(path.join(folder, ENTRY), entry);
   } catch (e) {
-    await rm(path.join(trashDir, id), { recursive: true, force: true }).catch(() => {});
+    await rm(folder, { recursive: true, force: true }).catch(() => {});
+    throw e;
+  }
+  try {
+    await move(dir, path.join(folder, SKILL), ops);
+  } catch (e) {
+    if (e instanceof SourceRemovalError) {
+      // Копия в корзине полная — это единственная целая копия, её не трогаем.
+      throw new Error(`Скилл перенесён в корзину, но исходную папку не удалось удалить полностью: ${e.message}`, { cause: e });
+    }
+    await rm(folder, { recursive: true, force: true }).catch(() => {});
     throw e;
   }
   return entry;
@@ -66,6 +93,10 @@ export async function listTrash(trashDir: string): Promise<TrashEntry[]> {
 
 const BAD_TARGET = 'Некорректный путь восстановления';
 
+/**
+ * Контракт: `isAllowedProject` получает канонический путь (`path.resolve`, без «..»).
+ * Вызывающий сравнивает его регистронезависимо со своим списком известных проектов по точному пути.
+ */
 export async function restoreFromTrash(
   trashDir: string,
   id: string,
@@ -90,7 +121,7 @@ export async function restoreFromTrash(
   if (scope === 'global') {
     expected = path.join(skillsRoot({ kind: 'global' }, agent, opts.home), name);
   } else {
-    const projectPath = path.dirname(path.dirname(path.dirname(originalPath)));
+    const projectPath = path.resolve(path.dirname(path.dirname(path.dirname(path.resolve(originalPath)))));
     if (!(await opts.isAllowedProject(projectPath))) throw new Error(BAD_TARGET);
     expected = path.join(skillsRoot({ kind: 'project', path: projectPath }, agent, opts.home), name);
   }

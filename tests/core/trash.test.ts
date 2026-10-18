@@ -148,6 +148,73 @@ describe('moveToTrash: без потери данных', () => {
   });
 });
 
+describe('moveToTrash: EXDEV, копирование удалось, удаление источника — нет', () => {
+  it('сохраняет копию в корзине и сообщает об этом', async () => {
+    const { home, trash } = await setup();
+    const { moveToTrash } = await import('../../src/core/trash');
+    const { cp, rm } = await import('node:fs/promises');
+    const dir = path.join(home, '.claude', 'skills', 'pdf');
+    const exdev = Object.assign(new Error('x'), { code: 'EXDEV' });
+    const ops = {
+      rename: async () => {
+        throw exdev;
+      },
+      cp,
+      rm: async () => {
+        throw new Error('EBUSY locked');
+      },
+    };
+    const err = await moveToTrash(trash, dir, { name: 'pdf', agent: 'claude', scope: 'global' }, 1000, ops).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/корзин/);
+    expect(err.message).toMatch(/EBUSY locked/);
+    const [entry] = await listTrash(trash);
+    expect(entry).toBeTruthy();
+    expect(await exists(path.join(trash, entry.id, 'skill', 'SKILL.md'))).toBe(true);
+    expect(await exists(path.join(trash, entry.id, 'entry.json'))).toBe(true);
+    void rm;
+  });
+
+  it('если копирование не удалось, папка корзины убирается', async () => {
+    const { home, trash } = await setup();
+    const { moveToTrash } = await import('../../src/core/trash');
+    const dir = path.join(home, '.claude', 'skills', 'pdf');
+    const ops = {
+      rename: async () => {
+        throw Object.assign(new Error('x'), { code: 'EXDEV' });
+      },
+      cp: async () => {
+        throw new Error('cp failed');
+      },
+      rm: async () => {},
+    };
+    await expect(
+      moveToTrash(trash, dir, { name: 'pdf', agent: 'claude', scope: 'global' }, 1000, ops),
+    ).rejects.toThrow('cp failed');
+    expect(await listTrash(trash)).toEqual([]);
+    expect(await exists(path.join(dir, 'SKILL.md'))).toBe(true);
+  });
+});
+
+describe('restoreFromTrash: канонический путь проекта', () => {
+  it('isAllowedProject получает path.resolve без «..»', async () => {
+    const { root, home, trash } = await setup();
+    const proj = path.join(root, 'proj');
+    const entry = await removeSkill({ kind: 'project', path: proj }, 'codex', 'local', home, trash);
+    const messy = [proj, 'zzz', '..', '.agents', 'skills', 'local'].join(path.sep); // join() бы нормализовал
+    await tamper(trash, entry.id, { originalPath: messy });
+    const seen: string[] = [];
+    await restoreFromTrash(trash, entry.id, {
+      home,
+      isAllowedProject: async (p) => {
+        seen.push(p);
+        return true;
+      },
+    });
+    expect(seen).toEqual([path.resolve(proj)]);
+  });
+});
+
 async function listDir(d: string) {
   return (await import('node:fs/promises')).readdir(d);
 }
