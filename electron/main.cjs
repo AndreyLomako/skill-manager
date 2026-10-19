@@ -74,12 +74,8 @@ if (!app.requestSingleInstanceLock()) {
     app.exit(1);
   }
 
-  const splashHtml = `<!doctype html><html><head><meta charset="utf-8"><title>${APP_NAME}</title>
-<style>html,body{margin:0;height:100%;background:${BG_COLOR};color:rgba(238,240,255,.62);
-font:15px "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;display:flex;align-items:center;justify-content:center}
-body{background-image:radial-gradient(ellipse 70% 80% at 20% 85%,rgba(122,30,160,.55),transparent 60%),
-radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),linear-gradient(120deg,#12071f,#3a1060 45%,#0c1538)}
-</style></head><body>Запуск Skill Manager…</body></html>`;
+  // Заставка, пока стартует сервер (~3 с): отдельный файл в стиле интерфейса.
+  const SPLASH_FILE = path.join(__dirname, 'splash.html');
 
   // Иконка окна нужна только при запуске из исходников: в установленном приложении Windows берёт её из exe,
   // Linux — из .desktop-файла, а у окон macOS иконки нет (в доке — иконка бандла).
@@ -104,6 +100,8 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
       minHeight: 600,
       title: APP_NAME,
       backgroundColor: BG_COLOR,
+      // Показываем окно, когда заставка уже нарисована, — без пустой светлой вспышки при старте.
+      show: false,
       autoHideMenuBar: true,
       icon: devWindowIcon(),
       webPreferences: {
@@ -141,7 +139,8 @@ radial-gradient(ellipse 60% 70% at 85% 15%,rgba(20,40,120,.55),transparent 60%),
     win.on('closed', () => {
       win = null;
     });
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(splashHtml)}`);
+    win.once('ready-to-show', () => win?.show());
+    win.loadFile(SPLASH_FILE);
   }
 
   function answers(url) {
