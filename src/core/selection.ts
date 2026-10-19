@@ -1,4 +1,13 @@
-import type { AgentId, CatalogSkill, CategoryDef, InstalledState, InstalledStatus, ProjectSource } from './types';
+import type {
+  AgentId,
+  CatalogPack,
+  CatalogSkill,
+  CategoryDef,
+  InstalledSkill,
+  InstalledState,
+  InstalledStatus,
+  ProjectSource,
+} from './types';
 
 export const MY_SKILLS = '__my__';
 export const INSTALLED = '__installed__';
@@ -48,22 +57,111 @@ export function toggleSelection(selected: readonly string[], id: string): string
   return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
 }
 
+export function topCategories(categories: readonly CategoryDef[]): CategoryDef[] {
+  return categories.filter((c) => !c.parent);
+}
+
+export function childCategories(categories: readonly CategoryDef[], parentId: string): CategoryDef[] {
+  return categories.filter((c) => c.parent === parentId);
+}
+
+/** «Видео › Монтаж» для подкатегории, название — для верхнего уровня. */
+export function categoryPath(categories: readonly CategoryDef[], id: string): string {
+  const c = categories.find((x) => x.id === id);
+  if (!c) return id;
+  const parent = c.parent ? categories.find((x) => x.id === c.parent) : undefined;
+  return parent ? `${parent.title} › ${c.title}` : c.title;
+}
+
+/** Скиллы категории для сетки; скиллы паков показываются внутри карточки пака. */
 export function skillsForCategory(skills: readonly CatalogSkill[], categoryId: string): CatalogSkill[] {
-  return skills.filter((s) => (categoryId === MY_SKILLS ? s.layer === 'user' : s.category === categoryId));
+  return skills.filter((s) => (categoryId === MY_SKILLS ? s.layer === 'user' : s.category === categoryId && !s.pack));
+}
+
+export function packsForCategory(packs: readonly CatalogPack[], categoryId: string): CatalogPack[] {
+  return packs.filter((p) => p.category === categoryId);
 }
 
 export function countByCategory(
   selected: readonly string[],
   skills: readonly CatalogSkill[],
+  categories: readonly CategoryDef[] = [],
 ): Record<string, number> {
   const set = new Set(selected);
+  const parentOf = new Map(categories.flatMap((c) => (c.parent ? [[c.id, c.parent] as const] : [])));
   const counts: Record<string, number> = {};
+  const add = (id: string) => (counts[id] = (counts[id] ?? 0) + 1);
   for (const s of skills) {
     if (!set.has(s.id)) continue;
-    counts[s.category] = (counts[s.category] ?? 0) + 1;
-    if (s.layer === 'user') counts[MY_SKILLS] = (counts[MY_SKILLS] ?? 0) + 1;
+    add(s.category);
+    const parent = parentOf.get(s.category);
+    if (parent) add(parent);
+    if (s.layer === 'user') add(MY_SKILLS);
   }
   return counts;
+}
+
+export type PackState = 'none' | 'some' | 'all' | 'installed';
+
+function packMembers(pack: CatalogPack, skills: readonly CatalogSkill[]): CatalogSkill[] {
+  const byId = new Map(skills.map((s) => [s.id, s]));
+  return pack.skills.flatMap((id) => {
+    const s = byId.get(id);
+    return s && isAvailable(s) ? [s] : [];
+  });
+}
+
+/** Состояние карточки пака: недоступные скиллы не учитываются, установленные не выбираются. */
+export function packState(
+  pack: CatalogPack,
+  selected: readonly string[],
+  installed: InstalledState,
+  skills: readonly CatalogSkill[],
+): PackState {
+  const members = packMembers(pack, skills);
+  const open = members.filter((s) => !Object.hasOwn(installed, s.id));
+  if (members.length > 0 && open.length === 0) return 'installed';
+  const picked = open.filter((s) => selected.includes(s.id)).length;
+  return picked === 0 ? 'none' : picked === open.length ? 'all' : 'some';
+}
+
+/** Клик по паку: выбрать все доступные неустановленные; если они уже выбраны — снять весь пак. */
+export function togglePack(
+  selected: readonly string[],
+  pack: CatalogPack,
+  skills: readonly CatalogSkill[],
+  installed: InstalledState,
+): string[] {
+  const open = packMembers(pack, skills)
+    .filter((s) => !Object.hasOwn(installed, s.id))
+    .map((s) => s.id);
+  if (open.length > 0 && open.every((id) => selected.includes(id))) {
+    return selected.filter((id) => !pack.skills.includes(id));
+  }
+  return [...selected, ...open.filter((id) => !selected.includes(id))];
+}
+
+/** «Установлено»: сначала скиллы без пака, затем группы каталожных паков (только найденные). */
+export function groupInstalled(
+  items: readonly InstalledSkill[],
+  skills: readonly CatalogSkill[],
+  packs: readonly CatalogPack[],
+): Array<{ pack: CatalogPack | null; items: InstalledSkill[] }> {
+  const packOf = new Map(skills.flatMap((s) => (s.pack ? [[s.id, s.pack] as const] : [])));
+  const loose: InstalledSkill[] = [];
+  const byPack = new Map<string, InstalledSkill[]>();
+  for (const item of items) {
+    const pack = item.kind === 'managed' ? packOf.get(item.name) : undefined;
+    if (pack) byPack.set(pack, [...(byPack.get(pack) ?? []), item]);
+    else loose.push(item);
+  }
+  const groups: Array<{ pack: CatalogPack | null; items: InstalledSkill[] }> = [];
+  if (loose.length > 0) groups.push({ pack: null, items: loose });
+  for (const p of packs) {
+    const found = byPack.get(p.id);
+    if (found) groups.push({ pack: p, items: found });
+  }
+  return groups;
 }
 
 /** Скилл можно установить хотя бы для одного агента. */
@@ -84,7 +182,7 @@ export function summarizeByCategory(
   for (const s of selected) counts.set(s.category, (counts.get(s.category) ?? 0) + 1);
   return categories
     .filter((c) => counts.has(c.id))
-    .map((c) => `${c.title} ${counts.get(c.id)}`)
+    .map((c) => `${categoryPath(categories, c.id)} ${counts.get(c.id)}`)
     .join(' · ');
 }
 

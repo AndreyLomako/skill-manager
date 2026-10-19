@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   agentsOf,
+  categoryPath,
+  childCategories,
+  groupInstalled,
+  packsForCategory,
+  packState,
+  togglePack,
+  topCategories,
   clientPathKey,
   countByCategory,
   defaultAgentChoice,
@@ -12,7 +19,7 @@ import {
   summarizeByCategory,
   toggleSelection,
 } from '../../src/core/selection';
-import type { CatalogSkill } from '../../src/core/types';
+import type { CatalogSkill, InstalledSkill } from '../../src/core/types';
 import { catalogSkill } from '../helpers/skill';
 
 const skills: CatalogSkill[] = [
@@ -97,5 +104,70 @@ describe('clientPathKey', () => {
 
   it.each([WIN, MAC, ANDROID, ''])('не Linux («%s»): нижний регистр', (ua) => {
     expect(clientPathKey('C:\Work\App', ua)).toBe('c:\work\app');
+  });
+});
+
+describe('selection: подкатегории и паки', () => {
+  const cats = [
+    { id: 'design', title: 'Дизайн', order: 1 },
+    { id: 'video', title: 'Видео', order: 2 },
+    { id: 'cut', title: 'Монтаж', parent: 'video', order: 1 },
+    { id: 'gen', title: 'Генерация', parent: 'video', order: 2 },
+  ];
+  const sk = [
+    catalogSkill({ id: 'imp', category: 'design', dir: 'x' }),
+    catalogSkill({ id: 'p1', category: 'cut', dir: 'x', pack: 'pk' }),
+    catalogSkill({ id: 'p2', category: 'cut', dir: 'x', pack: 'pk' }),
+    catalogSkill({ id: 'p3', category: 'cut', pack: 'pk', error: 'e' }),
+    catalogSkill({ id: 'solo', category: 'cut', dir: 'x' }),
+  ];
+  const pack = { id: 'pk', title: 'Пак', category: 'cut', summary: '', skills: ['p1', 'p2', 'p3'], layer: 'base' as const };
+
+  it('topCategories, childCategories, categoryPath', () => {
+    expect(topCategories(cats).map((c) => c.id)).toEqual(['design', 'video']);
+    expect(childCategories(cats, 'video').map((c) => c.id)).toEqual(['cut', 'gen']);
+    expect(childCategories(cats, 'design')).toEqual([]);
+    expect(categoryPath(cats, 'cut')).toBe('Видео › Монтаж');
+    expect(categoryPath(cats, 'design')).toBe('Дизайн');
+    expect(categoryPath(cats, 'nope')).toBe('nope');
+  });
+
+  it('skillsForCategory не показывает скиллы пака; packsForCategory', () => {
+    expect(skillsForCategory(sk, 'cut').map((s) => s.id)).toEqual(['solo']);
+    expect(packsForCategory([pack], 'cut')).toEqual([pack]);
+    expect(packsForCategory([pack], 'gen')).toEqual([]);
+  });
+
+  it('countByCategory суммирует подкатегории на родителе', () => {
+    expect(countByCategory(['p1', 'solo', 'imp'], sk, cats)).toEqual({ cut: 2, video: 2, design: 1 });
+  });
+
+  it('summarizeByCategory пишет путь подкатегории', () => {
+    expect(summarizeByCategory([sk[1], sk[4], sk[0]], cats)).toBe('Дизайн 1 · Видео › Монтаж 2');
+  });
+
+  it('packState: недоступные не считаются; всё установлено — installed', () => {
+    expect(packState(pack, [], {}, sk)).toBe('none');
+    expect(packState(pack, ['p1'], {}, sk)).toBe('some');
+    expect(packState(pack, ['p1', 'p2'], {}, sk)).toBe('all');
+    expect(packState(pack, ['p2'], { p1: 'up-to-date' }, sk)).toBe('all');
+    expect(packState(pack, [], { p1: 'up-to-date', p2: 'outdated' }, sk)).toBe('installed');
+  });
+
+  it('togglePack: добавляет доступные неустановленные, повторно — снимает все', () => {
+    expect(togglePack(['imp'], pack, sk, { p1: 'up-to-date' })).toEqual(['imp', 'p2']);
+    expect(togglePack(['imp', 'p2'], pack, sk, { p1: 'up-to-date' })).toEqual(['imp']);
+    expect(togglePack(['p1'], pack, sk, {})).toEqual(['p1', 'p2']);
+  });
+
+  it('groupInstalled: сначала без пака, затем группы паков с найденными скиллами', () => {
+    const item = (name: string, kind: InstalledSkill['kind'] = 'managed') =>
+      ({ name, title: name, description: '', agent: 'claude', kind, dir: name, root: 'r' }) as InstalledSkill;
+    const groups = groupInstalled([item('p2'), item('imp'), item('p1'), item('p1', 'plugin')], sk, [pack]);
+    expect(groups.map((g) => [g.pack?.id ?? null, g.items.map((i) => `${i.kind}:${i.name}`)])).toEqual([
+      [null, ['managed:imp', 'plugin:p1']],
+      ['pk', ['managed:p2', 'managed:p1']],
+    ]);
+    expect(groupInstalled([item('imp')], sk, [pack]).map((g) => g.pack?.id ?? null)).toEqual([null]);
   });
 });
