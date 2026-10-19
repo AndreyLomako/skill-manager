@@ -172,4 +172,66 @@ describe('ensureSource', () => {
     expect(b).toBe(a);
     expect(await readdir(cacheDir)).toEqual(['base-demo']);
   });
+
+  describe('git + sparse', () => {
+    async function makeBigRepo(root: string): Promise<string> {
+      const origin = path.join(root, 'origin');
+      await writeFiles(origin, {
+        'skills/demo/SKILL.md': '---\nname: Demo\n---\nv1',
+        'skills/other/SKILL.md': '---\nname: Other\n---\nv1',
+        'big/blob.txt': 'x'.repeat(200_000),
+        'README.md': 'root file',
+      });
+      await runGit(['init', '-b', 'main'], origin);
+      await runGit(['config', 'uploadpack.allowFilter', 'true'], origin);
+      await runGit(['add', '.'], origin);
+      await runGit([...GIT_ID, 'commit', '-m', 'v1'], origin);
+      return origin;
+    }
+    const has = (p: string) => access(p).then(() => true, () => false);
+
+    it('в рабочем дереве только нужные пути; новый путь добавляется без update', async () => {
+      const root = await tmpDir();
+      const origin = await makeBigRepo(root);
+      const src = { id: 'big', type: 'git' as const, url: pathToFileURL(origin).href };
+      const opts = { layer: 'base' as const, manifestDir: root, cacheDir: path.join(root, '.cache'), update: false };
+
+      const dir = await ensureSource(src, { ...opts, sparse: ['skills/demo'] });
+      expect(await has(path.join(dir, 'skills/demo/SKILL.md'))).toBe(true);
+      expect(await has(path.join(dir, 'skills/other/SKILL.md'))).toBe(false);
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
+
+      await ensureSource(src, { ...opts, sparse: ['skills/demo', 'skills/other'] });
+      expect(await has(path.join(dir, 'skills/other/SKILL.md'))).toBe(true);
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
+    });
+
+    it('update подтягивает новый коммит и сохраняет набор путей', async () => {
+      const root = await tmpDir();
+      const origin = await makeBigRepo(root);
+      const src = { id: 'big', type: 'git' as const, url: pathToFileURL(origin).href };
+      const opts = { layer: 'base' as const, manifestDir: root, cacheDir: path.join(root, '.cache'), sparse: ['skills/demo'] };
+      const dir = await ensureSource(src, { ...opts, update: false });
+
+      await writeFiles(origin, { 'skills/demo/SKILL.md': '---\nname: Demo\n---\nv2' });
+      await runGit([...GIT_ID, 'commit', '-am', 'v2'], origin);
+      await ensureSource(src, { ...opts, update: true });
+
+      expect(await readFile(path.join(dir, 'skills/demo/SKILL.md'), 'utf8')).toContain('v2');
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
+    });
+
+    it('старый полный клон становится частичным', async () => {
+      const root = await tmpDir();
+      const origin = await makeBigRepo(root);
+      const src = { id: 'big', type: 'git' as const, url: pathToFileURL(origin).href };
+      const opts = { layer: 'base' as const, manifestDir: root, cacheDir: path.join(root, '.cache'), update: false };
+      const dir = await ensureSource(src, opts);
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(true);
+
+      await ensureSource(src, { ...opts, sparse: ['skills/demo'] });
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
+      expect(await has(path.join(dir, 'skills/demo/SKILL.md'))).toBe(true);
+    });
+  });
 });

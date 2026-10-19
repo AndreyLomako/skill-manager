@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { access, mkdir, rm } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { renameWithRetry } from './json-file';
 import type { Layer, SourceDef } from './types';
@@ -36,6 +36,31 @@ export interface EnsureSourceOpts {
   cacheDir: string;
   update: boolean;
   onWarning?: (msg: string) => void;
+  /** Только эти пути источника (git): частичный клон без лишних файлов. */
+  sparse?: string[];
+}
+
+// Набор путей частичного клона, с которым синхронизировано рабочее дерево.
+const SPARSE_MARK = 'skill-manager-sparse.json';
+
+function sparseSet(paths: string[] | undefined): string[] | null {
+  if (!paths || paths.length === 0) return null;
+  const norm = paths.map((p) => p.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')).filter(Boolean);
+  return norm.length > 0 ? [...new Set(norm)].sort() : null;
+}
+
+async function applySparse(dir: string, paths: string[], git: GitRunner): Promise<void> {
+  // no-cone: шаблоны как в .gitignore; «/path/» — ровно эта папка от корня репозитория.
+  await git(['sparse-checkout', 'set', '--no-cone', '--', ...paths.map((p) => `/${p}/`)], dir);
+  await writeFile(path.join(dir, '.git', SPARSE_MARK), JSON.stringify(paths));
+}
+
+async function sparseMark(dir: string): Promise<string | null> {
+  try {
+    return await readFile(path.join(dir, '.git', SPARSE_MARK), 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 /** One in-flight git operation per cache dir; concurrent callers share it. */
@@ -68,11 +93,21 @@ async function ensureGitSource(
   opts: EnsureSourceOpts,
   git: GitRunner,
 ): Promise<string> {
+  const sparse = sparseSet(opts.sparse);
   if (await exists(path.join(dir, '.git'))) {
     if (opts.update) {
       try {
-        await git(['fetch', '--depth', '1', '--', 'origin', src.ref || 'HEAD'], dir);
+        const filter = sparse ? ['--filter=blob:none'] : [];
+        await git(['fetch', '--depth', '1', ...filter, '--', 'origin', src.ref || 'HEAD'], dir);
         await git(['reset', '--hard', 'FETCH_HEAD'], dir);
+      } catch (e) {
+        opts.onWarning?.((e as Error).message);
+      }
+    }
+    // Набор путей поменялся (в каталоге новый скилл из этого источника) или клон был полным.
+    if (sparse && (await sparseMark(dir)) !== JSON.stringify(sparse)) {
+      try {
+        await applySparse(dir, sparse, git);
       } catch (e) {
         opts.onWarning?.((e as Error).message);
       }
@@ -83,10 +118,13 @@ async function ensureGitSource(
   await mkdir(opts.cacheDir, { recursive: true });
   const tmp = `${dir}.tmp-${Date.now()}`;
   const args = ['clone', '--depth', '1'];
+  // Сервер без поддержки фильтра просто пришлёт всё — git предупредит и продолжит.
+  if (sparse) args.push('--filter=blob:none', '--sparse');
   if (src.ref) args.push('--branch', src.ref);
   args.push('--', src.url, tmp);
   try {
     await git(args);
+    if (sparse) await applySparse(tmp, sparse, git);
     await rm(dir, { recursive: true, force: true });
     await renameWithRetry(tmp, dir);
   } catch (e) {
