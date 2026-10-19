@@ -52,15 +52,35 @@ export interface CatalogSkill {
   id: string;
   title: string;
   description: string;
+  /** Одна-две строки для карточки: summary → description манифеста → description SKILL.md */
+  summary: string;
   category: string;
   layer: Layer;
-  dir: string | null;
+  /** Папка скилла для каждого агента; пусто, если скилл недоступен */
+  dirs: Partial<Record<AgentId, string>>;
+  commands: SkillCommand[];
+  commandsMore: number;
+  homepage?: string;
+  /** Откуда скилл: адрес репозитория или «папка: …» */
+  sourceLabel: string;
+  /** id пака, в который входит скилл */
+  pack?: string;
   error?: string;
+}
+
+export interface CatalogPack {
+  id: string;
+  title: string;
+  category: string;
+  summary: string;
+  skills: string[];
+  layer: Layer;
 }
 
 export interface Catalog {
   categories: CategoryDef[];
   skills: CatalogSkill[];
+  packs: CatalogPack[];
   errors: string[];
 }
 
@@ -72,7 +92,7 @@ export interface Project {
   sources: ProjectSource[];
 }
 
-export type InstallStatus = 'installed' | 'already-installed' | 'error';
+export type InstallStatus = 'installed' | 'already-installed' | 'unsupported' | 'error';
 
 export interface InstallResult {
   skillId: string;

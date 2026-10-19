@@ -66,8 +66,13 @@ export function countByCategory(
   return counts;
 }
 
+/** Скилл можно установить хотя бы для одного агента. */
+export function isAvailable(s: CatalogSkill): boolean {
+  return !s.error && Object.keys(s.dirs).length > 0;
+}
+
 export function pruneSelection(selected: readonly string[], skills: readonly CatalogSkill[]): string[] {
-  const available = new Set(skills.filter((s) => s.dir).map((s) => s.id));
+  const available = new Set(skills.filter(isAvailable).map((s) => s.id));
   return selected.filter((id) => available.has(id));
 }
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { listInstalled } from '../../src/core/inventory';
 import type { CatalogSkill } from '../../src/core/types';
+import { catalogSkill } from '../helpers/skill';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 
 afterEach(cleanupTmp);
@@ -35,7 +36,7 @@ async function makeHome() {
     'proj/.agents/skills/codex-local/SKILL.md': md('Codex local'),
   });
   const catalog: CatalogSkill[] = [
-    { id: 'pdf', title: 'PDF', description: '', category: 'docs', layer: 'base', dir: path.join(root, 'lib', 'pdf') },
+    catalogSkill({ id: 'pdf', title: 'PDF', category: 'docs', dir: path.join(root, 'lib', 'pdf') }),
   ];
   return { root, home, catalog };
 }

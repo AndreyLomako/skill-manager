@@ -79,7 +79,7 @@ export async function getInstalledAction(
   const catalog = await loadCatalog(paths);
   const out: Partial<Record<AgentId, InstalledState>> = {};
   for (const agent of parseAgents(agents)) {
-    out[agent] = await getInstalled(skillsRoot(checked, agent, paths.home), catalog.skills);
+    out[agent] = await getInstalled(skillsRoot(checked, agent, paths.home), catalog.skills, agent);
   }
   return out;
 }
@@ -103,6 +103,7 @@ export async function installSkillsAction(
   const out: InstallResult[] = [];
   for (const agent of list) {
     const results = await installSkills(skillsRoot(checked, agent, paths.home), catalog.skills, ids, {
+      agent,
       overwrite,
       trash: { dir: paths.trashDir, agent, scope: checked.kind },
     });

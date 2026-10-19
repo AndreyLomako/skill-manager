@@ -4,7 +4,8 @@ import { readFrontmatter } from './frontmatter';
 import { emptyManifest, parseManifest } from './manifest';
 import { BASE_MANIFEST, USER_MANIFEST, type AppPaths } from './paths';
 import { ensureSource, runGit, type GitRunner } from './sources';
-import type { Catalog, CatalogSkill, CategoryDef, Layer, Manifest } from './types';
+import { AGENTS } from './skill-targets';
+import type { AgentId, Catalog, CatalogPack, CatalogSkill, CategoryDef, Layer, Manifest, SkillDef, SourceDef } from './types';
 
 export class CatalogError extends Error {}
 
@@ -25,6 +26,25 @@ function isInside(parent: string, child: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+function sourceLabel(src: SourceDef | undefined): string {
+  if (!src) return '';
+  return src.type === 'git' ? src.url.replace(/\.git$/, '') : `папка: ${src.path}`;
+}
+
+/** Пути скилла по агентам: paths, иначе общий path для всех агентов. */
+function agentPaths(def: SkillDef): [AgentId, string][] {
+  return AGENTS.flatMap((agent): [AgentId, string][] => {
+    const p = def.paths ? def.paths[agent] : def.path;
+    return p === undefined ? [] : [[agent, p]];
+  });
+}
+
+/** Пути git-источника для частичного клона; null — нужен весь репозиторий (скилл в корне). */
+function sparsePaths(manifest: Manifest, sourceId: string): string[] | undefined {
+  const all = manifest.skills.filter((d) => d.source === sourceId).flatMap((d) => agentPaths(d).map(([, p]) => p));
+  return all.length > 0 && all.every((p) => p.replace(/[\\/.]/g, '') !== '') ? all : undefined;
+}
+
 async function resolveLayer(
   layer: Layer,
   manifest: Manifest,
@@ -37,47 +57,76 @@ async function resolveLayer(
   const sourceDirs = new Map<string, string | null>();
   for (const src of manifest.sources) {
     try {
-      const onWarning = (msg: string) =>
-        errors.push(`Источник «${src.id}» (${LAYER_LABEL[layer]}): не удалось обновить — ${msg}`);
-      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update, onWarning }, git));
+      const onWarning = (msg: string) => {
+        const text = `Источник «${src.id}» (${LAYER_LABEL[layer]}): не удалось обновить — ${msg}`;
+        if (!errors.includes(text)) errors.push(text);
+      };
+      const sparse = src.type === 'git' ? sparsePaths(manifest, src.id) : undefined;
+      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update, onWarning, sparse }, git));
     } catch (e) {
       sourceDirs.set(src.id, null);
       errors.push(`Источник «${src.id}» (${LAYER_LABEL[layer]}): ${(e as Error).message}`);
     }
   }
 
+  const packOf = new Map<string, string>();
+  for (const pack of manifest.packs) for (const id of pack.skills) packOf.set(id, pack.id);
+  const sources = new Map(manifest.sources.map((s) => [s.id, s]));
+
   const skills: CatalogSkill[] = [];
   for (const def of manifest.skills) {
-    const base = {
+    const base: CatalogSkill = {
       id: def.id,
       category: def.category,
       layer,
       title: def.title ?? def.id,
       description: def.description ?? '',
+      summary: def.summary ?? def.description ?? '',
+      dirs: {},
+      commands: def.commands ?? [],
+      commandsMore: def.commandsMore ?? 0,
+      sourceLabel: sourceLabel(sources.get(def.source)),
+      ...(def.homepage ? { homepage: def.homepage } : {}),
+      ...(packOf.has(def.id) ? { pack: packOf.get(def.id) } : {}),
     };
     const srcDir = sourceDirs.get(def.source) ?? null;
     if (!srcDir) {
-      skills.push({ ...base, dir: null, error: 'Источник недоступен' });
+      skills.push({ ...base, error: 'Источник недоступен' });
       continue;
     }
-    const dir = path.resolve(srcDir, def.path);
-    if (!isInside(srcDir, dir)) {
-      skills.push({ ...base, dir: null, error: 'Путь скилла выходит за пределы источника' });
+    const dirs: Partial<Record<AgentId, string>> = {};
+    let md: string | null = null;
+    let outside = false;
+    for (const [agent, rel] of agentPaths(def)) {
+      const dir = path.resolve(srcDir, rel);
+      if (!isInside(srcDir, dir)) {
+        outside = true;
+        break;
+      }
+      try {
+        const text = await readFile(path.join(dir, 'SKILL.md'), 'utf8');
+        dirs[agent] = dir;
+        md ??= text;
+      } catch {
+        // Нет копии для этого агента — ставится только туда, где копия есть.
+      }
+    }
+    if (outside) {
+      skills.push({ ...base, error: 'Путь скилла выходит за пределы источника' });
       continue;
     }
-    let md: string;
-    try {
-      md = await readFile(path.join(dir, 'SKILL.md'), 'utf8');
-    } catch {
-      skills.push({ ...base, dir: null, error: 'SKILL.md не найден' });
+    if (md === null) {
+      skills.push({ ...base, error: 'SKILL.md не найден' });
       continue;
     }
     const fm = readFrontmatter(md);
+    const description = def.description ?? fm.description ?? '';
     skills.push({
       ...base,
-      dir,
+      dirs,
       title: def.title ?? fm.name ?? def.id,
-      description: def.description ?? fm.description ?? '',
+      description,
+      summary: def.summary ?? description,
     });
   }
   return skills;
@@ -89,7 +138,7 @@ export function mergeCategories(
   skills: CatalogSkill[],
 ): CategoryDef[] {
   const map = new Map<string, CategoryDef>();
-  for (const c of [...base, ...user]) map.set(c.id, c);
+  for (const c of [...base, ...user]) map.set(c.id, { ...c });
   for (const s of skills) if (!map.has(s.category)) map.set(s.category, { id: s.category, title: s.category });
   return [...map.values()].sort(
     (a, b) => (a.order ?? 1000) - (b.order ?? 1000) || a.title.localeCompare(b.title, 'ru'),
@@ -125,7 +174,30 @@ export async function loadCatalog(
 
   const byId = new Map<string, CatalogSkill>();
   for (const s of [...baseSkills, ...userSkills]) byId.set(s.id, s);
-  const skills = [...byId.values()];
 
-  return { categories: mergeCategories(base.categories, user.categories, skills), skills, errors };
+  const packById = new Map<string, CatalogPack>();
+  for (const [layer, m] of [['base', base], ['user', user]] as const) {
+    for (const p of m.packs) packById.set(p.id, { ...p, summary: p.summary ?? '', layer });
+  }
+  const packs = [...packById.values()];
+
+  const categories = mergeCategories(base.categories, user.categories, [...byId.values()]);
+  const known = new Map(categories.map((c) => [c.id, c]));
+  for (const c of categories) {
+    if (c.parent && !known.get(c.parent)) {
+      errors.push(`Категория «${c.title}»: родительская категория «${c.parent}» не найдена`);
+      delete c.parent;
+    }
+  }
+  const parents = new Set(categories.flatMap((c) => (c.parent ? [c.parent] : [])));
+  const skills = [...byId.values()].map((s) =>
+    parents.has(s.category) && !s.error
+      ? {
+          ...s,
+          error: `Категория «${known.get(s.category)?.title ?? s.category}» разделена на подкатегории — укажите подкатегорию`,
+        }
+      : s,
+  );
+
+  return { categories, skills, packs, errors };
 }

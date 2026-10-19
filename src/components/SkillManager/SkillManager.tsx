@@ -51,6 +51,7 @@ interface Notice {
 const STATUS_TEXT: Record<InstallResult['status'], string> = {
   installed: '✓ установлен',
   'already-installed': '• уже был установлен',
+  unsupported: '— пропущен',
   error: '✗ ошибка',
 };
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { CatalogError, loadCatalog } from '../../src/core/catalog';
 import type { AppPaths } from '../../src/core/paths';
@@ -50,12 +51,14 @@ describe('loadCatalog', () => {
     expect(c.categories.map((x) => x.id)).toEqual(['graphics', 'video']);
     expect(c.skills).toEqual([
       {
-        id: 'palette', title: 'Палитра', description: 'описание', category: 'graphics',
-        layer: 'base', dir: path.join(root, 'catalog', 'samples', 'palette'),
+        id: 'palette', title: 'Палитра', description: 'описание', summary: 'описание', category: 'graphics',
+        layer: 'base', dirs: { claude: path.join(root, 'catalog', 'samples', 'palette'), codex: path.join(root, 'catalog', 'samples', 'palette') },
+        commands: [], commandsMore: 0, sourceLabel: 'папка: ./samples',
       },
       {
-        id: 'icons', title: 'Свои иконки', description: 'описание', category: 'graphics',
-        layer: 'base', dir: path.join(root, 'catalog', 'samples', 'icons'),
+        id: 'icons', title: 'Свои иконки', description: 'описание', summary: 'описание', category: 'graphics',
+        layer: 'base', dirs: { claude: path.join(root, 'catalog', 'samples', 'icons'), codex: path.join(root, 'catalog', 'samples', 'icons') },
+        commands: [], commandsMore: 0, sourceLabel: 'папка: ./samples',
       },
     ]);
     expect(c.errors).toEqual([]);
@@ -103,9 +106,9 @@ describe('loadCatalog', () => {
       ],
     });
     const c = await loadCatalog(paths);
-    expect(c.skills.find((s) => s.id === 'ghost')).toMatchObject({ dir: null, error: 'SKILL.md не найден' });
+    expect(c.skills.find((s) => s.id === 'ghost')).toMatchObject({ dirs: {}, error: 'SKILL.md не найден' });
     expect(c.skills.find((s) => s.id === 'evil')).toMatchObject({
-      dir: null, error: expect.stringMatching(/за пределы/),
+      dirs: {}, error: expect.stringMatching(/за пределы/),
     });
   });
 
@@ -119,8 +122,8 @@ describe('loadCatalog', () => {
       throw new Error('сеть недоступна');
     };
     const c = await loadCatalog(paths, {}, failingGit);
-    expect(c.skills.find((s) => s.id === 'far')).toMatchObject({ dir: null, error: 'Источник недоступен' });
-    expect(c.skills.find((s) => s.id === 'palette')?.dir).not.toBeNull();
+    expect(c.skills.find((s) => s.id === 'far')).toMatchObject({ dirs: {}, error: 'Источник недоступен' });
+    expect(c.skills.find((s) => s.id === 'palette')?.dirs.claude).toBeTruthy();
     expect(c.errors[0]).toMatch(/remote.*сеть недоступна/);
   });
 
@@ -147,8 +150,139 @@ describe('loadCatalog', () => {
     };
     const c = await loadCatalog(paths, { update: true }, failingGit);
     expect(c.skills.find((s) => s.id === 'far')).toMatchObject({
-      dir: path.join(root, '.cache', 'base-remote', 'far'), title: 'Далёкий',
+      dirs: { claude: path.join(root, '.cache', 'base-remote', 'far'), codex: path.join(root, '.cache', 'base-remote', 'far') }, title: 'Далёкий',
     });
     expect(c.errors).toEqual(['Источник «remote» (базовый): не удалось обновить — сеть недоступна']);
+  });
+});
+
+describe('loadCatalog: каталог v2', () => {
+  const v2 = (o: object) => ({
+    version: 1,
+    categories: [],
+    sources: [{ id: 'samples', type: 'local', path: './samples' }],
+    skills: [],
+    ...o,
+  });
+
+  it('paths по агентам: у каждого агента своя копия; описание — из копии Claude', async () => {
+    const { root, paths } = await setup(
+      v2({ skills: [{ id: 'imp', source: 'samples', category: 'design', paths: { claude: 'c/imp', codex: 'a/imp' } }] }),
+      undefined,
+      { 'catalog/samples/c/imp/SKILL.md': skillMd('Imp C'), 'catalog/samples/a/imp/SKILL.md': skillMd('Imp A') },
+    );
+    const s = (await loadCatalog(paths)).skills[0];
+    expect(s.dirs).toEqual({
+      claude: path.join(root, 'catalog', 'samples', 'c', 'imp'),
+      codex: path.join(root, 'catalog', 'samples', 'a', 'imp'),
+    });
+    expect(s.title).toBe('Imp C');
+    expect(s.error).toBeUndefined();
+  });
+
+  it('нет копии для агента — агента нет в dirs; нет ни одной — ошибка', async () => {
+    const { paths } = await setup(
+      v2({
+        skills: [
+          { id: 'only-c', source: 'samples', category: 'd', paths: { claude: 'c/x' } },
+          { id: 'half', source: 'samples', category: 'd', paths: { claude: 'c/x', codex: 'a/missing' } },
+          { id: 'none', source: 'samples', category: 'd', paths: { claude: 'nope', codex: 'nope2' } },
+        ],
+      }),
+      undefined,
+      { 'catalog/samples/c/x/SKILL.md': skillMd('X') },
+    );
+    const c = await loadCatalog(paths);
+    const by = (id: string) => c.skills.find((s) => s.id === id)!;
+    expect(Object.keys(by('only-c').dirs)).toEqual(['claude']);
+    expect(Object.keys(by('half').dirs)).toEqual(['claude']);
+    expect(by('half').error).toBeUndefined();
+    expect(by('none')).toMatchObject({ dirs: {}, error: 'SKILL.md не найден' });
+  });
+
+  it('summary: из манифеста, иначе description манифеста, иначе frontmatter; команды и homepage', async () => {
+    const { paths } = await setup(
+      v2({
+        skills: [
+          {
+            id: 'a', source: 'samples', path: 'palette', category: 'd', summary: 'Кратко',
+            commands: [{ cmd: '/a x', hint: 'h' }], commandsMore: 4, homepage: 'https://a.dev',
+          },
+          { id: 'b', source: 'samples', path: 'palette', category: 'd', description: 'Из манифеста' },
+          { id: 'c', source: 'samples', path: 'palette', category: 'd' },
+        ],
+      }),
+    );
+    const c = await loadCatalog(paths);
+    const by = (id: string) => c.skills.find((s) => s.id === id)!;
+    expect(by('a')).toMatchObject({
+      summary: 'Кратко', commands: [{ cmd: '/a x', hint: 'h' }], commandsMore: 4, homepage: 'https://a.dev',
+    });
+    expect(by('b').summary).toBe('Из манифеста');
+    expect(by('c').summary).toBe('описание');
+  });
+
+  it('паки попадают в каталог с layer, у скиллов пака проставлен pack', async () => {
+    const { paths } = await setup(
+      v2({
+        categories: [{ id: 'cut', title: 'Монтаж' }],
+        skills: [
+          { id: 'palette', source: 'samples', path: 'palette', category: 'cut' },
+          { id: 'icons', source: 'samples', path: 'icons', category: 'cut' },
+        ],
+        packs: [{ id: 'p', title: 'Пак', category: 'cut', summary: 'S', skills: ['palette', 'icons'] }],
+      }),
+    );
+    const c = await loadCatalog(paths);
+    expect(c.packs).toEqual([
+      { id: 'p', title: 'Пак', category: 'cut', summary: 'S', skills: ['palette', 'icons'], layer: 'base' },
+    ]);
+    expect(c.skills.every((s) => s.pack === 'p')).toBe(true);
+  });
+
+  it('скилл в категории, разделённой на подкатегории, — ошибка с подсказкой', async () => {
+    const { paths } = await setup(
+      v2({
+        categories: [{ id: 'video', title: 'Видео' }, { id: 'cut', title: 'Монтаж', parent: 'video' }],
+        skills: [{ id: 'palette', source: 'samples', path: 'palette', category: 'video' }],
+      }),
+    );
+    const c = await loadCatalog(paths);
+    expect(c.skills[0].error).toMatch(/Видео.*подкатегори/);
+    expect(c.categories.find((x) => x.id === 'cut')?.parent).toBe('video');
+  });
+
+  it('git-источник получает sparse — пути всех его скиллов (по агентам)', async () => {
+    const { paths } = await setup(
+      v2({
+        sources: [{ id: 'remote', type: 'git', url: 'https://example.invalid/r.git' }],
+        skills: [
+          { id: 'imp', source: 'remote', category: 'd', paths: { claude: '.claude/skills/imp', codex: '.agents/skills/imp' } },
+          { id: 'two', source: 'remote', path: 'skills/two', category: 'd' },
+        ],
+      }),
+    );
+    const calls: string[][] = [];
+    const fake = async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === 'clone') await mkdir(path.join(args[args.length - 1], '.git'), { recursive: true });
+    };
+    await loadCatalog(paths, {}, fake);
+    const set = calls.find((a) => a[0] === 'sparse-checkout');
+    expect(set?.slice(-3)).toEqual(['/.agents/skills/imp/', '/.claude/skills/imp/', '/skills/two/']);
+    expect(calls[0]).toContain('--sparse');
+  });
+
+  it('sourceLabel: git — адрес без .git', async () => {
+    const { paths } = await setup(
+      v2({
+        sources: [{ id: 'remote', type: 'git', url: 'https://github.com/o/r.git' }],
+        skills: [{ id: 'far', source: 'remote', path: 'far', category: 'd' }],
+      }),
+      undefined,
+      { '.cache/base-remote/.git/HEAD': 'ref: refs/heads/main', '.cache/base-remote/far/SKILL.md': skillMd('Far') },
+    );
+    const noop = async () => {};
+    expect((await loadCatalog(paths, {}, noop)).skills[0].sourceLabel).toBe('https://github.com/o/r');
   });
 });

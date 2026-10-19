@@ -13,11 +13,12 @@ import {
   toggleSelection,
 } from '../../src/core/selection';
 import type { CatalogSkill } from '../../src/core/types';
+import { catalogSkill } from '../helpers/skill';
 
 const skills: CatalogSkill[] = [
-  { id: 'a', title: 'A', description: '', category: 'graphics', layer: 'base', dir: 'x' },
-  { id: 'b', title: 'B', description: '', category: 'video', layer: 'user', dir: 'x' },
-  { id: 'c', title: 'C', description: '', category: 'video', layer: 'base', dir: null, error: 'e' },
+  catalogSkill({ id: 'a', title: 'A', category: 'graphics', dir: 'x' }),
+  catalogSkill({ id: 'b', title: 'B', category: 'video', layer: 'user', dir: 'x' }),
+  catalogSkill({ id: 'c', title: 'C', category: 'video', error: 'e' }),
 ];
 const categories = [
   { id: 'graphics', title: 'Графика' },

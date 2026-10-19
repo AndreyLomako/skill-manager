@@ -84,7 +84,7 @@ export async function listInstalled(
   const out: InstalledSkill[] = [];
   for (const agent of agents) {
     const root = skillsRoot(scope, agent, home);
-    const state = await getInstalled(root, catalog);
+    const state = await getInstalled(root, catalog, agent);
     for (const s of await collect(root, agent, 'managed', {}, isReservedSkillName)) {
       out.push({ ...s, status: state[s.name] });
     }
