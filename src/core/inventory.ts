@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFrontmatter } from './frontmatter';
 import { pathKey, type Platform } from './platform';
 import { getInstalled } from './installer';
-import { isReservedSkillName, skillsRoot } from './skill-targets';
+import { isReservedSkillName, skillRoots, skillsRoot } from './skill-targets';
 import type { AgentId, CatalogSkill, InstalledKind, InstalledSkill, Scope } from './types';
 
 const KIND_ORDER: InstalledKind[] = ['managed', 'synced', 'plugin', 'system'];
@@ -38,7 +38,7 @@ async function collect(
     if (skip(name)) continue;
     const dir = path.join(parent, name);
     const info = await describeSkill(dir, name);
-    if (info) out.push({ name, agent, kind, dir, ...info, ...extra });
+    if (info) out.push({ name, agent, kind, dir, root: parent, ...info, ...extra });
   }
   return out;
 }
@@ -84,9 +84,12 @@ export async function listInstalled(
   const out: InstalledSkill[] = [];
   for (const agent of agents) {
     const root = skillsRoot(scope, agent, home);
-    const state = await getInstalled(root, catalog, agent);
-    for (const s of await collect(root, agent, 'managed', {}, isReservedSkillName)) {
-      out.push({ ...s, status: state[s.name] });
+    for (const r of skillRoots(scope, agent, home)) {
+      // Статус — по своему корню: одинаковое имя в двух папках — две разные копии.
+      const state = await getInstalled(r, catalog, agent);
+      for (const s of await collect(r, agent, 'managed', {}, isReservedSkillName)) {
+        out.push({ ...s, status: state[s.name] });
+      }
     }
     if (scope.kind !== 'global') continue;
     if (agent === 'claude') {

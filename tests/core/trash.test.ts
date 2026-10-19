@@ -294,3 +294,44 @@ describe('purgeTrash: папки без entry.json', () => {
     expect(await exists(old)).toBe(false);
   });
 });
+
+describe('removeSkill / restoreFromTrash: несколько корней (~/.codex/skills)', () => {
+  async function codexHome() {
+    const root = await tmpDir();
+    const home = path.join(root, 'home');
+    const trash = path.join(root, 'trash');
+    await writeFiles(root, {
+      'home/.codex/skills/legacy/SKILL.md': 'x',
+      'home/.agents/skills/legacy/SKILL.md': 'y',
+      'elsewhere/skills/evil/SKILL.md': 'z',
+    });
+    return { root, home, trash };
+  }
+
+  it('удаляет из указанного корня и возвращает туда же', async () => {
+    const { home, trash } = await codexHome();
+    const legacyRoot = path.join(home, '.codex', 'skills');
+    const entry = await removeSkill({ kind: 'global' }, 'codex', 'legacy', home, trash, legacyRoot);
+    expect(entry.originalPath).toBe(path.join(legacyRoot, 'legacy'));
+    expect(await exists(path.join(legacyRoot, 'legacy'))).toBe(false);
+    expect(await exists(path.join(home, '.agents', 'skills', 'legacy', 'SKILL.md'))).toBe(true);
+    await restoreFromTrash(trash, entry.id, allow(home));
+    expect(await readFile(path.join(legacyRoot, 'legacy', 'SKILL.md'), 'utf8')).toBe('x');
+  });
+
+  it('без root — первый корень (~/.agents/skills)', async () => {
+    const { home, trash } = await codexHome();
+    const entry = await removeSkill({ kind: 'global' }, 'codex', 'legacy', home, trash);
+    expect(entry.originalPath).toBe(path.join(home, '.agents', 'skills', 'legacy'));
+  });
+
+  it('root вне разрешённых — отказ', async () => {
+    const { root, home, trash } = await codexHome();
+    await expect(
+      removeSkill({ kind: 'global' }, 'codex', 'evil', home, trash, path.join(root, 'elsewhere', 'skills')),
+    ).rejects.toThrow(/нельзя/);
+    await expect(
+      removeSkill({ kind: 'global' }, 'claude', 'legacy', home, trash, path.join(home, '.codex', 'skills')),
+    ).rejects.toThrow(/нельзя/);
+  });
+});

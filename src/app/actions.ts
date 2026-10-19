@@ -7,7 +7,7 @@ import { getInstalled, installSkills } from '@/core/installer';
 import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
 import { listInstalled } from '@/core/inventory';
-import { isForbiddenProjectRoot, skillsRoot, parseAgents } from '@/core/skill-targets';
+import { isForbiddenProjectRoot, skillRoots, skillsRoot, parseAgents } from '@/core/skill-targets';
 import { purgeTrash, removeSkill, restoreFromTrash } from '@/core/trash';
 import { ensureSource, sourceCacheDir } from '@/core/sources';
 import type {
@@ -79,7 +79,7 @@ export async function getInstalledAction(
   const catalog = await loadCatalog(paths);
   const out: Partial<Record<AgentId, InstalledState>> = {};
   for (const agent of parseAgents(agents)) {
-    out[agent] = await getInstalled(skillsRoot(checked, agent, paths.home), catalog.skills, agent);
+    out[agent] = await getInstalled(skillRoots(checked, agent, paths.home), catalog.skills, agent);
   }
   return out;
 }
@@ -125,14 +125,16 @@ export async function removeSkillAction(
   scope: Scope,
   agent: AgentId,
   name: string,
+  root?: string,
 ): Promise<{ ok: true; entry: TrashEntry } | { ok: false; error: string }> {
   const paths = appPaths();
   if (typeof name !== 'string') return { ok: false, error: 'Некорректное имя' };
+  if (root !== undefined && typeof root !== 'string') return { ok: false, error: 'Некорректная папка' };
   const checked = await checkScope(paths, scope);
   if (!checked) return { ok: false, error: UNKNOWN_SCOPE };
   if (agent !== 'claude' && agent !== 'codex') return { ok: false, error: 'Неизвестный агент' };
   try {
-    return { ok: true, entry: await removeSkill(checked, agent, name, paths.home, paths.trashDir) };
+    return { ok: true, entry: await removeSkill(checked, agent, name, paths.home, paths.trashDir, root) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

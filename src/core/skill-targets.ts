@@ -10,6 +10,16 @@ export function skillsRoot(scope: Scope, agent: AgentId, home: string): string {
   return path.join(base, AGENT_DIR[agent], 'skills');
 }
 
+/**
+ * Все папки, где агент ищет скиллы этой области. Первая — куда ставит приложение.
+ * Codex глобально читает ещё и ~/.codex/skills (прежнее место пользовательских скиллов).
+ */
+export function skillRoots(scope: Scope, agent: AgentId, home: string): string[] {
+  const roots = [skillsRoot(scope, agent, home)];
+  if (scope.kind === 'global' && agent === 'codex') roots.push(path.join(home, '.codex', 'skills'));
+  return roots;
+}
+
 // Папки агентов в home, которые нельзя принимать за проект: установка/восстановление туда
 // писало бы в ~/.codex, плагины или глобальные skills.
 const FORBIDDEN_HOME_DIRS = [['.codex'], ['.claude', 'plugins'], ['.claude', 'skills'], ['.agents', 'skills']];

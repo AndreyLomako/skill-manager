@@ -2,7 +2,7 @@ import { access, cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { renameWithRetry, writeJsonAtomic } from './json-file';
-import { isForbiddenProjectRoot, isValidSkillName, skillsRoot } from './skill-targets';
+import { isForbiddenProjectRoot, isValidSkillName, skillRoots, skillsRoot } from './skill-targets';
 import type { AgentId, Scope, TrashEntry } from './types';
 
 const ENTRY = 'entry.json';
@@ -119,7 +119,9 @@ export async function restoreFromTrash(
   }
   let expected: string;
   if (scope === 'global') {
-    expected = path.join(skillsRoot({ kind: 'global' }, agent, opts.home), name);
+    const key = path.resolve(originalPath).toLowerCase();
+    const candidates = skillRoots({ kind: 'global' }, agent, opts.home).map((r) => path.join(r, name));
+    expected = candidates.find((c) => path.resolve(c).toLowerCase() === key) ?? candidates[0];
   } else {
     const projectPath = path.resolve(path.dirname(path.dirname(path.dirname(path.resolve(originalPath)))));
     if (isForbiddenProjectRoot(projectPath, opts.home) || !(await opts.isAllowedProject(projectPath))) {
@@ -183,9 +185,13 @@ export async function removeSkill(
   name: string,
   home: string,
   trashDir: string,
+  root?: string,
 ): Promise<TrashEntry> {
   if (!isValidSkillName(name)) throw new Error('Этот скилл нельзя удалить');
-  const dir = path.join(skillsRoot(scope, agent, home), name);
+  const roots = skillRoots(scope, agent, home);
+  const base = root === undefined ? roots[0] : roots.find((r) => path.resolve(r).toLowerCase() === path.resolve(root).toLowerCase());
+  if (!base) throw new Error('Этот скилл нельзя удалить');
+  const dir = path.join(base, name);
   if (!(await exists(path.join(dir, 'SKILL.md')))) throw new Error('Скилл не найден');
   return moveToTrash(trashDir, dir, { name, agent, scope: scope.kind });
 }

@@ -283,7 +283,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
     const { item, scope: targetScope, scopeKey: targetKey } = removing;
     setRemoving(null);
     try {
-      const res = await removeSkillAction(targetScope, item.agent, item.name);
+      const res = await removeSkillAction(targetScope, item.agent, item.name, item.root);
       if (!res.ok) {
         pulse('error');
         setNotice({ tone: 'error', title: 'Не удалось удалить', lines: [res.error] });

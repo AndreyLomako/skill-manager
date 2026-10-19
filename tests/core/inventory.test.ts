@@ -103,3 +103,23 @@ describe('listInstalled: дедупликация плагинов по плат
     expect(res.filter((s) => s.kind === 'plugin')).toHaveLength(1);
   });
 });
+
+describe('listInstalled: ~/.codex/skills', () => {
+  it('скиллы из ~/.codex/skills — managed с root; одинаковое имя в двух корнях — две записи', async () => {
+    const root = await tmpDir();
+    const home = path.join(root, 'home');
+    await writeFiles(root, {
+      'home/.agents/skills/both/SKILL.md': md('Both A'),
+      'home/.codex/skills/both/SKILL.md': md('Both C'),
+      'home/.codex/skills/legacy/SKILL.md': md('Legacy'),
+      'home/.codex/skills/.system/imagegen/SKILL.md': md('imagegen'),
+    });
+    const res = await listInstalled({ kind: 'global' }, ['codex'], home, []);
+    expect(res.map((s) => [s.kind, s.name, s.root])).toEqual([
+      ['managed', 'both', path.join(home, '.agents', 'skills')],
+      ['managed', 'both', path.join(home, '.codex', 'skills')],
+      ['managed', 'legacy', path.join(home, '.codex', 'skills')],
+      ['system', 'imagegen', path.join(home, '.codex', 'skills', '.system')],
+    ]);
+  });
+});

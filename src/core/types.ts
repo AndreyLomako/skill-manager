@@ -117,6 +117,8 @@ export interface InstalledSkill {
   agent: AgentId;
   kind: InstalledKind;
   dir: string;
+  /** Папка, в которой найден скилл (для удаления из нужного корня) */
+  root: string;
   status?: InstalledStatus;
   plugin?: string;
 }
