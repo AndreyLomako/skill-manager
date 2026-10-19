@@ -38,15 +38,8 @@ import { ProjectList } from '../ProjectList/ProjectList';
 import { SkillTiles } from '../SkillTiles/SkillTiles';
 import { Icon } from '../Icon/Icon';
 import { Tile } from '../Tile/Tile';
-import styles from './SkillManager.module.css';
-
-interface Notice {
-  tone: 'success' | 'error';
-  title: string;
-  lines: string[];
-  hint?: string;
-  action?: { label: string; onClick(): void };
-}
+import { Notice, type NoticeData } from '../Notice/Notice';
+import styles from './SkillsSection.module.css';
 
 const STATUS_TEXT: Record<InstallResult['status'], string> = {
   installed: '✓ установлен',
@@ -61,7 +54,7 @@ const NOTICE_ACTION_MS = 15000;
 
 const pathKey = (p: string) => clientPathKey(p, typeof navigator === 'undefined' ? '' : navigator.userAgent);
 
-export function SkillManager({ initialCatalog, initialProjects }: { initialCatalog: Catalog; initialProjects: ProjectsResult }) {
+export function SkillsSection({ initialCatalog, initialProjects }: { initialCatalog: Catalog; initialProjects: ProjectsResult }) {
   const blob = useRef<BlobHandle>(null);
   const [catalog, setCatalog] = useState(initialCatalog);
   const [projects, setProjects] = useState(initialProjects);
@@ -76,7 +69,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   );
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<NoticeData | null>(null);
   // agent задан — обновление из «Установлено» только для этого агента; null — для текущего выбора агента
   const [updating, setUpdating] = useState<{ id: string; agent: AgentId | null } | null>(null);
   const [adding, setAdding] = useState(false);
@@ -359,9 +352,8 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
   };
 
   return (
-    <div className={styles.app}>
-      <header className={styles.app__header}>
-        <h1 className={styles.app__logo}>Skill Manager</h1>
+    <>
+      <div className={styles.actions}>
         <Tile
           title={refreshing ? 'Обновляю каталог…' : 'Обновить каталог'}
           marker="↻"
@@ -369,7 +361,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
           onClick={refreshCatalog}
           onHover={hover}
         />
-      </header>
+      </div>
 
       <ProjectList
         projects={projects.projects}
@@ -442,30 +434,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
         onInstall={() => void install(selected, false)}
       />
 
-      {notice && (
-        <div className={`${styles.notice} ${styles[`notice--${notice.tone}`]}`} role="status" onClick={() => setNotice(null)}>
-          <strong className={styles.notice__title}>{notice.title}</strong>
-          <ul className={styles.notice__list}>
-            {notice.lines.map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-          {notice.hint && <p className={styles.notice__hint}>{notice.hint}</p>}
-          {notice.action && (
-            <button
-              type="button"
-              className={styles.notice__action}
-              disabled={noticeBusy}
-              onClick={(e) => {
-                e.stopPropagation();
-                notice.action?.onClick();
-              }}
-            >
-              {notice.action.label}
-            </button>
-          )}
-        </div>
-      )}
+      {notice && <Notice notice={notice} busy={noticeBusy} onClose={() => setNotice(null)} />}
 
       {updating && scope && (
         <Dialog title="Обновить скилл?" onClose={() => setUpdating(null)}>
@@ -514,6 +483,6 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
           }}
         />
       )}
-    </div>
+    </>
   );
 }

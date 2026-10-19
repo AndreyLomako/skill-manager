@@ -1,0 +1,44 @@
+.app {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "header actions"
+    "projects main"
+    "cart cart";
+  gap: 16px 28px;
+  height: 100vh;
+  padding: 20px 28px;
+}
+.app__header { grid-area: header; display: flex; align-items: center; gap: 18px; min-width: 0; }
+.app__logo {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: linear-gradient(90deg, #fff, var(--color-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sections {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+.sections__item {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--color-text-dim);
+  transition: background 0.2s, color 0.2s;
+}
+.sections__item:hover { color: var(--color-text); }
+.sections__item--active {
+  color: var(--color-text);
+  background: linear-gradient(135deg, rgba(61, 91, 255, 0.35), rgba(157, 77, 255, 0.32));
+}

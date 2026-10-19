@@ -1,0 +1,28 @@
+.actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.app__main { grid-area: main; position: relative; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.app__errors {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  gap: 4px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--color-error);
+  background: rgba(255, 107, 138, 0.08);
+  border: 1px solid rgba(255, 107, 138, 0.3);
+}
+
+/* Сцена: круг + кольцо категорий + плитки скиллов */
+.stage {
+  --stage-size: min(72vh, calc(100vw - 520px));
+  --ring-radius: calc(var(--stage-size) * 0.47);
+  position: relative;
+  width: var(--stage-size);
+  height: var(--stage-size);
+}
+
+.dialog__text { margin-bottom: 18px; line-height: 1.5; color: var(--color-text-dim); }
+.dialog__actions { display: flex; gap: 10px; }
