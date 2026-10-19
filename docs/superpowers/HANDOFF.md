@@ -6,7 +6,7 @@
 Ветка `feat/updates-crossplatform` **влита в `main`** (fast-forward) и отправлена на GitHub. Репозиторий **публичный**.
 Дизайн: [specs/2026-10-18-skill-manager-updates-crossplatform-design.md](specs/2026-10-18-skill-manager-updates-crossplatform-design.md).
 
-Шаги 1–6 сделаны (с подтверждения пользователя 2026-10-19). Выпускается v0.2.0 (шаг 7). Дальше идёт шаг 8: живая проверка автообновления на Windows.
+Шаги 1–7 сделаны (с подтверждения пользователя 2026-10-19): вышел **v0.2.0** — https://github.com/AndreyLomako/skill-manager/releases/tag/v0.2.0. **Следующий шаг — 8: живая проверка автообновления на Windows.** Для неё нужно выпустить ещё один публичный релиз (v0.2.1) и поставить приложение на эту машину — сначала спросить пользователя.
 
 ## Сделано 2026-10-19, вечер — публикация
 - Резервная копия всей истории до переписывания: `C:\Users\highs\skill-manager-backup-2026-10-19.bundle`.
@@ -76,7 +76,7 @@
 4. ~~Влить в `main` и force-push~~ — сделано.
 5. ~~Сделать репозиторий публичным~~ — сделано.
 6. ~~CI зелёный на трёх ОС~~ — сделано.
-7. **Выпустить v0.2.0**: `npm version minor` → `git push --follow-tags`. Тег должен совпадать с версией в `package.json` (electron-builder ищет черновик по тегу). Проверить, что в релизе есть: Setup.exe, dmg×2, zip×2, AppImage, deb, `latest.yml`, `latest-mac.yml`, `latest-linux.yml`.
+7. ~~Выпустить v0.2.0~~ — сделано. Release-workflow прошёл с первого раза (create → 3 сборки → publish). В релизе: Setup.exe, dmg×2, zip×2, AppImage, deb, `latest.yml`, `latest-mac.yml`, `latest-linux.yml`; ссылки в `latest*.yml` совпадают с именами файлов. Мелочь: blockmap для mac-zip загружаются как `Skill.Manager-…` (точка вместо пробела), а zip — как `Skill-Manager-…`. Это причуда electron-builder; разностная загрузка на mac не сработает, но там режим notify, так что ни на что не влияет.
 8. **Живая проверка автообновления на Windows:** поставить v0.2.0 из релиза → выпустить v0.2.1 → приложение 0.2.0 показывает «Загружена версия 0.2.1» → после перезапуска стоит 0.2.1. (v0.1.0 обновиться не сможет — в нём нет updater'а.)
 9. Закрыть эпик `interface-e7r`.
 
