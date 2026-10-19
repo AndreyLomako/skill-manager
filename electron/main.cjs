@@ -215,7 +215,9 @@ if (!app.requestSingleInstanceLock()) {
       log.write(`[${new Date().toISOString()}] сервер завершился, код ${code}\n`);
       if (server) {
         server = null;
-        fail(`Сервер приложения неожиданно завершился (код ${code}).`);
+        // Сигнал завершения может дойти до сервера раньше, чем до главного процесса: даём штатному
+        // выходу полсекунды, прежде чем считать это аварией (fail сам ничего не делает, если идёт выход).
+        setTimeout(() => fail(`Сервер приложения неожиданно завершился (код ${code}).`), 500);
       }
     });
 
@@ -243,6 +245,16 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     killServer();
   });
+
+  // kill / выключение системы шлют сигнал всем процессам приложения: сервер может умереть первым,
+  // и без этого флага окно покажет «сервер неожиданно завершился». Это штатный выход.
+  for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+    process.on(sig, () => {
+      quitting = true;
+      killServer();
+      app.quit();
+    });
+  }
 
   app.whenReady().then(start, (e) => fail(String(e)));
 }
