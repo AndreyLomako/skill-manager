@@ -4,6 +4,7 @@ const electron = require('electron');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
+const { isSplashPainted } = require('./reveal.cjs');
 const { resolveRuntime, findFreePort, envWithoutRunAsNode, serverEnv } = require('./paths.cjs');
 const { startUpdater } = require('./updater.cjs');
 
@@ -34,6 +35,8 @@ const PORT_FIRST = 4327;
 const PORT_LAST = 4427;
 const SERVER_TIMEOUT_MS = 30_000;
 const BG_COLOR = '#12071f';
+// Сколько ждать первого кадра в показанном прозрачном окне, прежде чем всё равно сделать его видимым.
+const REVEAL_TIMEOUT_MS = 800;
 
 // Данные — в <appData>/Skill Manager независимо от имени пакета (и в разработке тоже):
 // %APPDATA% на Windows, ~/Library/Application Support на macOS, ~/.config на Linux.
@@ -92,6 +95,41 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]));
   }
 
+  /**
+   * Показывает окно без пустой вспышки. Пока окно скрыто, Chromium не выводит кадры: после show()
+   * Windows анимирует пустую поверхность, затем рисует backgroundColor, и только потом — заставку.
+   * Поэтому окно показывается прозрачным и становится видимым, когда в его поверхности уже есть
+   * заставка (точка в левом нижнем углу — фиолетовый градиент, а не цвет фона). Сигнал рендерера
+   * (requestAnimationFrame) для этого не годится: кадр может быть готов, но ещё не выведен.
+   * Linux setOpacity не поддерживает — там просто show().
+   */
+  function revealWhenPainted(w) {
+    if (process.platform === 'linux') {
+      w.show();
+      return;
+    }
+    w.setOpacity(0);
+    w.show();
+    const started = Date.now();
+    const poll = async () => {
+      if (w.isDestroyed()) return;
+      if (Date.now() - started < REVEAL_TIMEOUT_MS) {
+        try {
+          const [cw, ch] = w.getContentSize();
+          const img = await w.webContents.capturePage({ x: Math.round(cw * 0.2), y: Math.round(ch * 0.85), width: 1, height: 1 });
+          if (!isSplashPainted(img.toBitmap())) {
+            setTimeout(poll, 16);
+            return;
+          }
+        } catch {
+          // Снимок не удался — показываем как есть.
+        }
+      }
+      if (!w.isDestroyed()) w.setOpacity(1);
+    };
+    poll();
+  }
+
   function createWindow(appOrigin) {
     win = new BrowserWindow({
       width: 1280,
@@ -139,7 +177,9 @@ if (!app.requestSingleInstanceLock()) {
     win.on('closed', () => {
       win = null;
     });
-    win.once('ready-to-show', () => win?.show());
+    win.once('ready-to-show', () => {
+      if (win) revealWhenPainted(win);
+    });
     // Если сервер ответит раньше, loadURL прервёт заставку (ERR_ABORTED) — это нормально.
     win.loadFile(SPLASH_FILE).catch(() => {});
   }
