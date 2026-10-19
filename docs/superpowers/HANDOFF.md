@@ -1,12 +1,21 @@
-# Где остановились — 2026-10-18
+# Где остановились — 2026-10-19
 
 ## Текущая работа
 
 **Автообновления + macOS и Linux** — эпик beads `interface-e7r`.
-Ветка `feat/updates-crossplatform` (последний коммит `e6ffda1`). **В `main` не влита, на GitHub не отправлена.**
+Ветка `feat/updates-crossplatform` (последний коммит `c7ae4a3`). **В `main` не влита, на GitHub не отправлена.**
 Дизайн: [specs/2026-10-18-skill-manager-updates-crossplatform-design.md](specs/2026-10-18-skill-manager-updates-crossplatform-design.md).
 
-Остановились на шаге: живой запуск Linux-версии в WSL (`.deb` уже установлен в WSL, приложение ещё не запускали).
+Остановились на шаге 2 «Ревью Electron/updater/CI-части» — пакет для ревью уже подготовлен (см. ниже), само ревью ещё не запускалось.
+
+## Сделано 2026-10-19
+
+- **Linux проверен вживую в WSL** (Ubuntu 24.04): `.deb` ставится через `apt` вместе с зависимостями, приложение запускается под WSLg, сервер отвечает за 2 с, лог чистый, обновления в режиме `notify` (как и задумано для `.deb`). Ошибки `SharedImage failed` в stderr — ограничение GPU в WSLg, не наши.
+- **Баг `interface-po7` (закрыт):** в `.deb` не хватало зависимостей — на минимальной системе падал с `libasound.so.2`. В `package.json → build.deb.depends` добавлены `libasound2t64 | libasound2`, `libgbm1`, `libdrm2`, `libxkbcommon0` (+ список electron-builder по умолчанию), `recommends: git`. Проверено переустановкой.
+- **Баг `interface-9ca` (закрыт) — «кривой прелоадер»:** старая заставка показывала градиент узкой полосой (из-за `display:flex` на `html`), а перед ней было пустое светлое окно. Теперь `electron/splash.html` в стиле приложения (градиент + зерно на всё окно, светящееся кольцо, название, полоса загрузки, учёт `prefers-reduced-motion`); окно создаётся скрытым и показывается на `ready-to-show`. Проверено покадровой съёмкой: первый кадр — уже заставка, через ~2,5 с плавно сменяется интерфейсом.
+- **Эмодзи → SVG-иконки** (`src/components/Icon/Icon.tsx`: globe, trash, lock): на Linux без шрифта эмодзи 🌐 🗑 🔒 рисовались квадратами. Длинный путь в сообщении об ошибке в списке проектов теперь переносится.
+- **Сигналы завершения:** `SIGTERM`/`SIGINT`/`SIGHUP` — штатный выход; перед сообщением «сервер неожиданно завершился» пауза 500 мс (иначе при `kill`/выключении системы появлялся ложный диалог об ошибке).
+- Коммиты: `7fc725c`, `2acf895`, `c7ae4a3`. Windows: `tsc` чистый, 246 тестов. Linux: 234 прошли, 12 пропущены (только для Windows).
 
 ## Что уже сделано
 
@@ -40,16 +49,14 @@
 
 ## Что осталось — по порядку
 
-1. **Запустить Linux-версию в WSL** (WSLg покажет окно на рабочем столе Windows):
-   ```bash
-   wsl -d Ubuntu-24.04 -- "/opt/Skill Manager/skill-manager"
-   # проверить: curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:4327/  → 200
-   # данные: ~/.config/Skill Manager/   лог: ~/.config/Skill Manager/logs/server.log
-   ```
-   AppImage в минимальной WSL без библиотек падал с `libnspr4.so` — после установки `.deb` зависимости уже есть, можно повторить:
-   `cd ~/sm/dist && APPIMAGE_EXTRACT_AND_RUN=1 "./Skill Manager-0.1.0.AppImage"`.
-   Сборка для WSL лежит в `~/sm` (свежий клон ветки, Linux `node_modules`).
-2. **Ревью Electron/updater/CI-части** (коммиты `ff99905`…`e6ffda1`) — ещё не делалось целиком. Обратить внимание: гонки в `release.yml`, логика `updater.cjs`, конфиг electron-builder для mac/linux.
+1. ~~Запустить Linux-версию в WSL~~ — **сделано** (см. выше). Не проверен только запуск AppImage (зависимости в WSL теперь есть):
+   `wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/sm/dist && APPIMAGE_EXTRACT_AND_RUN=1 "./Skill Manager-0.1.0.AppImage"'`.
+   В WSL: Node 24.22 через nvm (`. ~/.nvm/nvm.sh`), клон ветки в `~/sm`, установлен пакет `skill-manager` (`/opt/Skill Manager/skill-manager`, данные `~/.config/Skill Manager/`).
+2. **Ревью Electron/updater/CI-части** — **следующий шаг.** Пакет готов: `.superpowers/sdd/review-be6f9a2..c7ae4a3.diff` (11 коммитов, без package-lock). Проверить:
+   - `updater.cjs`: режимы по ОС (Windows NSIS и AppImage — auto, `.deb` и mac — notify, dev — off), сравнение версий, расписание проверок, поведение без сети и при лимите GitHub API (60 запросов/ч без токена), что `SKILL_MANAGER_FAKE_VERSION` не влияет на собранную версию, автообновление неподписанного Windows-приложения;
+   - `release.yml`/`ci.yml`: черновик → загрузка из матрицы в тот же черновик → публикация; что будет при падении одной сборки; права; связка тега и версии;
+   - конфиг electron-builder для mac/linux, имена файлов против `latest*.yml`;
+   - `main.cjs`: заставка через `loadFile` в sandbox, есть ли путь, где окно так и не покажется; обработка сигналов и пауза 500 мс (не маскирует ли настоящий сбой); меню macOS.
 3. **Заменить email в истории** (решение пользователя: анонимный адрес GitHub). Адрес: `98387798+AndreyLomako@users.noreply.github.com`.
    ```bash
    git config user.email "98387798+AndreyLomako@users.noreply.github.com"
