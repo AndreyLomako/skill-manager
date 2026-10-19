@@ -3,10 +3,18 @@
 ## Текущая работа
 
 **Автообновления + macOS и Linux** — эпик beads `interface-e7r`.
-Ветка `feat/updates-crossplatform`. **В `main` не влита, на GitHub не отправлена.**
+Ветка `feat/updates-crossplatform` **влита в `main`** (fast-forward) и отправлена на GitHub. Репозиторий **публичный**.
 Дизайн: [specs/2026-10-18-skill-manager-updates-crossplatform-design.md](specs/2026-10-18-skill-manager-updates-crossplatform-design.md).
 
-Шаги 1–2 (проверка в WSL, ревью Electron/updater/CI) сделаны. **Следующий шаг — 3 «Заменить email в истории».** Шаги 3–5 необратимы (переписывание истории, force-push, открытие репозитория): перед ними нужно подтверждение пользователя.
+Шаги 1–6 сделаны (с подтверждения пользователя 2026-10-19). Выпускается v0.2.0 (шаг 7). Дальше идёт шаг 8: живая проверка автообновления на Windows.
+
+## Сделано 2026-10-19, вечер — публикация
+- Резервная копия всей истории до переписывания: `C:\Users\highs\skill-manager-backup-2026-10-19.bundle`.
+- `git filter-branch` по веткам и тегам: в авторах и коммиттерах остался только `98387798+AndreyLomako@users.noreply.github.com`. Старый адрес нашёлся и в **тексте** этого файла (пример команды) — вычищен по всей истории вторым проходом `--tree-filter`. Поиск `git log -p` по `mail.ru` теперь пуст, секретов (токенов и ключей) в истории нет. `user.email` в репозитории — noreply (глобальный `~/.gitconfig` не менялся, там старый адрес).
+- `main` ← fast-forward ветки; force-push `main`, `feat/*` и тега `v0.1.0`. Тег v0.1.0 указывает на переписанный коммит, релиз v0.1.0 на месте. PR'ов не было.
+- Репозиторий открыт (`PATCH private=false`). Анонимные `releases/latest` и `releases.atom` отвечают 200, так что 404 в `updater.log` больше не будет.
+- На GitHub старые коммиты ещё какое-то время открываются по прямому SHA, пока не пройдёт сборка мусора. Убрать сразу можно только через GitHub Support.
+- CI на `main` зелёный на Windows, macOS и Linux.
 
 ## Сделано 2026-10-19, вечер — ревью Electron/updater/CI (`interface-e7r.1`)
 
@@ -64,18 +72,10 @@
 
 1. ~~Запустить Linux-версию в WSL~~ — **сделано** (`.deb` и AppImage).
 2. ~~Ревью Electron/updater/CI-части~~ — **сделано** (см. выше, `interface-e7r.1`).
-3. **Заменить email в истории** (решение пользователя: анонимный адрес GitHub). Адрес: `98387798+AndreyLomako@users.noreply.github.com`.
-   ```bash
-   git config user.email "98387798+AndreyLomako@users.noreply.github.com"
-   git filter-branch --env-filter '
-     if [ "$GIT_AUTHOR_EMAIL" = "<старый-адрес>" ]; then export GIT_AUTHOR_EMAIL="98387798+AndreyLomako@users.noreply.github.com"; fi
-     if [ "$GIT_COMMITTER_EMAIL" = "<старый-адрес>" ]; then export GIT_COMMITTER_EMAIL="98387798+AndreyLomako@users.noreply.github.com"; fi
-   ' --tag-name-filter cat -- --all
-   ```
-   Затем проверить `git log --all --format='%ae' | sort -u` — только noreply.
-4. **Влить** `feat/updates-crossplatform` в `main` и **force-push** всех веток и тегов (`git push --force --all origin && git push --force --tags origin`) — история переписана.
-5. **Сделать репозиторий публичным** (решение пользователя) — через REST API: `PATCH /repos/AndreyLomako/skill-manager` с `{"private": false}`.
-6. **CI зелёный** на трёх ОС (проверить вкладку Actions после пуша).
+3. ~~Заменить email в истории~~ — сделано.
+4. ~~Влить в `main` и force-push~~ — сделано.
+5. ~~Сделать репозиторий публичным~~ — сделано.
+6. ~~CI зелёный на трёх ОС~~ — сделано.
 7. **Выпустить v0.2.0**: `npm version minor` → `git push --follow-tags`. Тег должен совпадать с версией в `package.json` (electron-builder ищет черновик по тегу). Проверить, что в релизе есть: Setup.exe, dmg×2, zip×2, AppImage, deb, `latest.yml`, `latest-mac.yml`, `latest-linux.yml`.
 8. **Живая проверка автообновления на Windows:** поставить v0.2.0 из релиза → выпустить v0.2.1 → приложение 0.2.0 показывает «Загружена версия 0.2.1» → после перезапуска стоит 0.2.1. (v0.1.0 обновиться не сможет — в нём нет updater'а.)
 9. Закрыть эпик `interface-e7r`.
