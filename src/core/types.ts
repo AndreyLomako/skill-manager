@@ -4,6 +4,13 @@ export interface CategoryDef {
   id: string;
   title: string;
   order?: number;
+  /** id категории верхнего уровня; вложенность — один уровень */
+  parent?: string;
+}
+
+export interface SkillCommand {
+  cmd: string;
+  hint: string;
 }
 
 export type SourceDef =
@@ -14,9 +21,23 @@ export interface SkillDef {
   id: string;
   source: string;
   path: string;
+  /** Путь отдельно для каждого агента — когда в источнике разные копии (вместо path) */
+  paths?: Partial<Record<AgentId, string>>;
   category: string;
   title?: string;
   description?: string;
+  summary?: string;
+  commands?: SkillCommand[];
+  commandsMore?: number;
+  homepage?: string;
+}
+
+export interface PackDef {
+  id: string;
+  title: string;
+  category: string;
+  summary?: string;
+  skills: string[];
 }
 
 export interface Manifest {
@@ -24,6 +45,7 @@ export interface Manifest {
   categories: CategoryDef[];
   sources: SourceDef[];
   skills: SkillDef[];
+  packs: PackDef[];
 }
 
 export interface CatalogSkill {

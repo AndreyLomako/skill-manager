@@ -43,3 +43,95 @@ describe('parseManifest', () => {
     expect(() => parseManifest(raw, 'T')).toThrow(re);
   });
 });
+
+describe('parseManifest: каталог v2', () => {
+  const base = { version: 1, sources: [{ id: 's', type: 'local', path: '.' }] };
+  const parse = (o: object) => parseManifest(JSON.stringify({ ...base, ...o }), 'T');
+
+  it('parent у категории', () => {
+    const m = parse({ categories: [{ id: 'video', title: 'Видео' }, { id: 'cut', title: 'Монтаж', parent: 'video' }] });
+    expect(m.categories[1].parent).toBe('video');
+    expect(m.categories[0].parent).toBeUndefined();
+  });
+
+  it('parent должен ссылаться на категорию верхнего уровня этого же файла', () => {
+    expect(() => parse({ categories: [{ id: 'cut', title: 'М', parent: 'nope' }] })).toThrow(/parent/);
+    expect(() =>
+      parse({
+        categories: [
+          { id: 'a', title: 'A' },
+          { id: 'b', title: 'B', parent: 'a' },
+          { id: 'c', title: 'C', parent: 'b' },
+        ],
+      }),
+    ).toThrow(/вложенность/);
+  });
+
+  it('paths по агентам вместо path', () => {
+    const m = parse({ skills: [{ id: 'x', source: 's', category: 'c', paths: { claude: 'a', codex: 'b' } }] });
+    expect(m.skills[0].paths).toEqual({ claude: 'a', codex: 'b' });
+    expect(() =>
+      parse({ skills: [{ id: 'x', source: 's', category: 'c', path: 'p', paths: { claude: 'a' } }] }),
+    ).toThrow(/path.*paths/);
+    expect(() => parse({ skills: [{ id: 'x', source: 's', category: 'c', paths: { gemini: 'a' } }] })).toThrow(/агент/);
+    expect(() => parse({ skills: [{ id: 'x', source: 's', category: 'c', paths: {} }] })).toThrow(/paths/);
+  });
+
+  it('summary, commands, commandsMore, homepage', () => {
+    const m = parse({
+      skills: [
+        {
+          id: 'x',
+          source: 's',
+          category: 'c',
+          summary: 'S',
+          commands: [{ cmd: '/x a', hint: 'h' }],
+          commandsMore: 3,
+          homepage: 'https://x.dev',
+        },
+      ],
+    });
+    expect(m.skills[0]).toMatchObject({
+      summary: 'S',
+      commands: [{ cmd: '/x a', hint: 'h' }],
+      commandsMore: 3,
+      homepage: 'https://x.dev',
+    });
+  });
+
+  it('commands: не больше 8, cmd и hint обязательны; commandsMore — целое ≥ 0; homepage только https', () => {
+    const nine = Array.from({ length: 9 }, (_, i) => ({ cmd: `/c${i}`, hint: 'h' }));
+    const sk = (extra: object) => parse({ skills: [{ id: 'x', source: 's', category: 'c', ...extra }] });
+    expect(() => sk({ commands: nine })).toThrow(/8/);
+    expect(() => sk({ commands: [{ cmd: '/a' }] })).toThrow(/hint/);
+    expect(() => sk({ commandsMore: -1 })).toThrow(/commandsMore/);
+    expect(() => sk({ homepage: 'http://x' })).toThrow(/https/);
+  });
+
+  it('packs: скиллы существуют, категория совпадает, id не пересекается, скилл в одном паке', () => {
+    const skills = [
+      { id: 'a', source: 's', category: 'cut' },
+      { id: 'b', source: 's', category: 'cut' },
+    ];
+    const m = parse({ skills, packs: [{ id: 'p', title: 'P', category: 'cut', skills: ['a', 'b'] }] });
+    expect(m.packs[0]).toEqual({ id: 'p', title: 'P', category: 'cut', skills: ['a', 'b'] });
+    const pk = (p: object) => parse({ skills, packs: [{ id: 'p', title: 'P', category: 'cut', skills: ['a'], ...p }] });
+    expect(() => pk({ skills: ['zzz'] })).toThrow(/zzz/);
+    expect(() => pk({ category: 'other' })).toThrow(/категори/);
+    expect(() => pk({ id: 'a', skills: ['b'] })).toThrow(/повторяется/);
+    expect(() => pk({ skills: [] })).toThrow(/пуст/);
+    expect(() =>
+      parse({
+        skills,
+        packs: [
+          { id: 'p', title: 'P', category: 'cut', skills: ['a'] },
+          { id: 'q', title: 'Q', category: 'cut', skills: ['a'] },
+        ],
+      }),
+    ).toThrow(/двух паках|уже в паке/);
+  });
+
+  it('старый файл без новых полей валиден, packs = []', () => {
+    expect(parse({}).packs).toEqual([]);
+  });
+});
