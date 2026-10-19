@@ -65,6 +65,8 @@ export interface CatalogSkill {
   sourceLabel: string;
   /** id пака, в который входит скилл */
   pack?: string;
+  /** Источник ещё загружается (первый запуск) — каталог перезагрузится сам */
+  pending?: boolean;
   error?: string;
 }
 

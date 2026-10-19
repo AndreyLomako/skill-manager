@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFrontmatter } from './frontmatter';
 import { emptyManifest, parseManifest } from './manifest';
 import { BASE_MANIFEST, USER_MANIFEST, type AppPaths } from './paths';
-import { ensureSource, runGit, type GitRunner } from './sources';
+import { ensureSource, NotClonedError, runGit, type GitRunner } from './sources';
 import { AGENTS } from './skill-targets';
 import type { AgentId, Catalog, CatalogPack, CatalogSkill, CategoryDef, Layer, Manifest, SkillDef, SourceDef } from './types';
 
@@ -51,10 +51,12 @@ async function resolveLayer(
   manifestDir: string,
   cacheDir: string,
   update: boolean,
+  clone: boolean,
   git: GitRunner,
   errors: string[],
 ): Promise<CatalogSkill[]> {
   const sourceDirs = new Map<string, string | null>();
+  const pending = new Set<string>();
   for (const src of manifest.sources) {
     try {
       const onWarning = (msg: string) => {
@@ -62,9 +64,13 @@ async function resolveLayer(
         if (!errors.includes(text)) errors.push(text);
       };
       const sparse = src.type === 'git' ? sparsePaths(manifest, src.id) : undefined;
-      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update, onWarning, sparse }, git));
+      sourceDirs.set(src.id, await ensureSource(src, { layer, manifestDir, cacheDir, update, onWarning, sparse, clone }, git));
     } catch (e) {
       sourceDirs.set(src.id, null);
+      if (e instanceof NotClonedError) {
+        pending.add(src.id);
+        continue;
+      }
       errors.push(`Источник «${src.id}» (${LAYER_LABEL[layer]}): ${(e as Error).message}`);
     }
   }
@@ -91,7 +97,7 @@ async function resolveLayer(
     };
     const srcDir = sourceDirs.get(def.source) ?? null;
     if (!srcDir) {
-      skills.push({ ...base, error: 'Источник недоступен' });
+      skills.push(pending.has(def.source) ? { ...base, pending: true, error: 'Загружается…' } : { ...base, error: 'Источник недоступен' });
       continue;
     }
     const dirs: Partial<Record<AgentId, string>> = {};
@@ -147,11 +153,12 @@ export function mergeCategories(
 
 export async function loadCatalog(
   paths: AppPaths,
-  opts: { update?: boolean } = {},
+  opts: { update?: boolean; clone?: boolean } = {},
   git: GitRunner = runGit,
 ): Promise<Catalog> {
   const errors: string[] = [];
   const update = opts.update ?? false;
+  const clone = opts.clone ?? true;
 
   const baseFile = path.join(paths.baseCatalogDir, BASE_MANIFEST);
   let base: Manifest | null;
@@ -169,8 +176,8 @@ export async function loadCatalog(
     errors.push((e as Error).message);
   }
 
-  const baseSkills = await resolveLayer('base', base, paths.baseCatalogDir, paths.cacheDir, update, git, errors);
-  const userSkills = await resolveLayer('user', user, paths.userDir, paths.cacheDir, update, git, errors);
+  const baseSkills = await resolveLayer('base', base, paths.baseCatalogDir, paths.cacheDir, update, clone, git, errors);
+  const userSkills = await resolveLayer('user', user, paths.userDir, paths.cacheDir, update, clone, git, errors);
 
   const byId = new Map<string, CatalogSkill>();
   for (const s of [...baseSkills, ...userSkills]) byId.set(s.id, s);

@@ -286,3 +286,32 @@ describe('loadCatalog: каталог v2', () => {
     expect((await loadCatalog(paths, {}, noop)).skills[0].sourceLabel).toBe('https://github.com/o/r');
   });
 });
+
+describe('loadCatalog: без клонирования (первая отрисовка)', () => {
+  it('clone: false — git не клонируется, скиллы источника помечены pending; с кэшем — работают', async () => {
+    const { paths } = await setup(
+      {
+        version: 1,
+        sources: [
+          { id: 'remote', type: 'git', url: 'https://example.invalid/r.git' },
+          { id: 'cached', type: 'git', url: 'https://example.invalid/c.git' },
+        ],
+        skills: [
+          { id: 'far', source: 'remote', path: 'far', category: 'd' },
+          { id: 'near', source: 'cached', path: 'near', category: 'd' },
+        ],
+      },
+      undefined,
+      { '.cache/base-cached/.git/HEAD': 'ref: refs/heads/main', '.cache/base-cached/near/SKILL.md': skillMd('Near') },
+    );
+    const calls: string[][] = [];
+    const git = async (args: string[]) => {
+      calls.push(args);
+    };
+    const c = await loadCatalog(paths, { clone: false }, git);
+    expect(calls.filter((a) => a[0] === 'clone')).toEqual([]);
+    expect(c.skills.find((s) => s.id === 'far')).toMatchObject({ pending: true, error: 'Загружается…', dirs: {} });
+    expect(c.skills.find((s) => s.id === 'near')?.dirs.claude).toBeTruthy();
+    expect(c.errors).toEqual([]);
+  });
+});

@@ -38,7 +38,12 @@ export interface EnsureSourceOpts {
   onWarning?: (msg: string) => void;
   /** Только эти пути источника (git): частичный клон без лишних файлов. */
   sparse?: string[];
+  /** false — не клонировать отсутствующий git-источник (быстрая первая отрисовка), а бросить NotClonedError. */
+  clone?: boolean;
 }
+
+/** git-источник ещё не загружен, а клонирование отключено. */
+export class NotClonedError extends Error {}
 
 // Набор путей частичного клона, с которым синхронизировано рабочее дерево.
 const SPARSE_MARK = 'skill-manager-sparse.json';
@@ -115,6 +120,7 @@ async function ensureGitSource(
     return dir;
   }
 
+  if (opts.clone === false) throw new NotClonedError('Источник ещё не загружен');
   await mkdir(opts.cacheDir, { recursive: true });
   const tmp = `${dir}.tmp-${Date.now()}`;
   const args = ['clone', '--depth', '1'];

@@ -5,7 +5,7 @@ import { getCatalogAction, getProjectsAction } from './actions';
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
-  const [catalog, projects] = await Promise.all([getCatalogAction(false), getProjectsAction()]);
+  const [catalog, projects] = await Promise.all([getCatalogAction(false, false), getProjectsAction()]);
   if (!catalog.ok) return <ErrorScreen message={catalog.error} />;
   return <SkillManager initialCatalog={catalog.catalog} initialProjects={projects} />;
 }

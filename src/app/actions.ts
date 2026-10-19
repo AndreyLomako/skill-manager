@@ -43,9 +43,10 @@ export async function addProjectAction(
   }
 }
 
-export async function getCatalogAction(update = false): Promise<CatalogResult> {
+/** clone = false — не клонировать отсутствующие git-источники (первая отрисовка не ждёт сеть). */
+export async function getCatalogAction(update = false, clone = true): Promise<CatalogResult> {
   try {
-    return { ok: true, catalog: await loadCatalog(appPaths(), { update }) };
+    return { ok: true, catalog: await loadCatalog(appPaths(), { update, clone }) };
   } catch (e) {
     if (e instanceof CatalogError) return { ok: false, error: e.message };
     throw e;

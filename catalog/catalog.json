@@ -1,16 +1,33 @@
 {
   "version": 1,
   "categories": [
-    { "id": "graphics", "title": "Графика", "order": 1 },
-    { "id": "video", "title": "Видео", "order": 2 }
+    { "id": "design", "title": "Дизайн", "order": 1 },
+    { "id": "video", "title": "Видео", "order": 2 },
+    { "id": "video-editing", "title": "Монтаж", "parent": "video", "order": 1 },
+    { "id": "video-generation", "title": "Генерация", "parent": "video", "order": 2 },
+    { "id": "other", "title": "Другие", "order": 3 }
   ],
   "sources": [
-    { "id": "samples", "type": "local", "path": "./samples" }
+    { "id": "impeccable", "type": "git", "url": "https://github.com/pbakaus/impeccable.git" }
   ],
   "skills": [
-    { "id": "sample-palette", "source": "samples", "path": "sample-palette", "category": "graphics" },
-    { "id": "sample-icons", "source": "samples", "path": "sample-icons", "category": "graphics" },
-    { "id": "sample-storyboard", "source": "samples", "path": "sample-storyboard", "category": "video" },
-    { "id": "sample-subtitles", "source": "samples", "path": "sample-subtitles", "category": "video" }
+    {
+      "id": "impeccable",
+      "source": "impeccable",
+      "paths": { "claude": ".claude/skills/impeccable", "codex": ".agents/skills/impeccable" },
+      "category": "design",
+      "title": "Impeccable",
+      "summary": "Дизайн-директор для интерфейсов: ревью UX, аудит доступности, шлифовка, типографика, цвет и анимации.",
+      "commands": [
+        { "cmd": "/impeccable critique", "hint": "UX-ревью с оценкой по эвристикам" },
+        { "cmd": "/impeccable audit", "hint": "Доступность, скорость, адаптивность" },
+        { "cmd": "/impeccable polish", "hint": "Финальная шлифовка перед релизом" },
+        { "cmd": "/impeccable shape", "hint": "Продумать UX/UI до кода" },
+        { "cmd": "/impeccable typeset", "hint": "Шрифты и типографическая иерархия" },
+        { "cmd": "/impeccable animate", "hint": "Осмысленные анимации и микровзаимодействия" }
+      ],
+      "commandsMore": 18,
+      "homepage": "https://impeccable.style"
+    }
   ]
 }
