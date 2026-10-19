@@ -36,6 +36,7 @@ import { Dialog } from '../Dialog/Dialog';
 import { InstalledTiles } from '../InstalledTiles/InstalledTiles';
 import { ProjectList } from '../ProjectList/ProjectList';
 import { SkillTiles } from '../SkillTiles/SkillTiles';
+import { Icon } from '../Icon/Icon';
 import { Tile } from '../Tile/Tile';
 import styles from './SkillManager.module.css';
 
@@ -493,7 +494,7 @@ export function SkillManager({ initialCatalog, initialProjects }: { initialCatal
             {removing.item.title} будет перенесён в корзину приложения. Вернуть можно сразу из уведомления; через 30 дней корзина очищается.
           </p>
           <div className={styles.dialog__actions}>
-            <Tile title="Удалить" marker="🗑" tone="warning" onClick={() => void confirmRemove()} />
+            <Tile title="Удалить" marker={<Icon name="trash" />} tone="warning" onClick={() => void confirmRemove()} />
             <Tile title="Отмена" onClick={() => setRemoving(null)} />
           </div>
         </Dialog>

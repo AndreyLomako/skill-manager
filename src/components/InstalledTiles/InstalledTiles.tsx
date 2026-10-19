@@ -2,6 +2,7 @@
 
 import { AGENT_LABEL } from '@/core/selection';
 import type { InstalledSkill } from '@/core/types';
+import { Icon } from '../Icon/Icon';
 import { Tile, type TileProps } from '../Tile/Tile';
 import styles from './InstalledTiles.module.css';
 
@@ -29,7 +30,7 @@ function subtitle(item: InstalledSkill): string {
 }
 
 function tileState(item: InstalledSkill): Pick<TileProps, 'marker' | 'tone' | 'disabled'> {
-  if (item.kind !== 'managed') return { marker: '🔒', disabled: true };
+  if (item.kind !== 'managed') return { marker: <Icon name="lock" size={14} />, disabled: true };
   if (item.status === 'up-to-date') return { marker: '✓', tone: 'success' };
   if (item.status === 'outdated') return { marker: '↻', tone: 'warning' };
   return { marker: '•' };
@@ -66,7 +67,7 @@ export function InstalledTiles({ items, showAgent, loading, error, onRemove, onU
                 aria-label={`Удалить ${item.title}`}
                 onClick={() => onRemove(item)}
               >
-                🗑
+                <Icon name="trash" size={14} />
               </button>
             )}
           </div>

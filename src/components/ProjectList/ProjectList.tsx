@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { clientPathKey, GLOBAL_PROJECT, sourcesLabel } from '@/core/selection';
 import type { Project } from '@/core/types';
+import { Icon } from '../Icon/Icon';
 import { Tile } from '../Tile/Tile';
 import styles from './ProjectList.module.css';
 
@@ -67,7 +68,7 @@ export function ProjectList({ projects, activePath, error, onSelect, onAddFolder
       <Tile
         title="Глобально"
         hint="все проекты · ~/.claude и ~/.agents"
-        marker="🌐"
+        marker={<Icon name="globe" />}
         selected={activePath === GLOBAL_PROJECT}
         onClick={() => onSelect(GLOBAL_PROJECT)}
         onHover={onHover}
