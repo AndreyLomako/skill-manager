@@ -2,10 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { updateMode, isNewer } = require('../../electron/updater.cjs') as {
+const { updateMode, isNewer, isAppImageRun } = require('../../electron/updater.cjs') as {
   updateMode: (o: { platform: NodeJS.Platform; isPackaged: boolean; isAppImage: boolean }) => 'off' | 'auto' | 'notify';
   isNewer: (latest: unknown, current: unknown) => boolean;
+  isAppImageRun: (o: { env: Record<string, string | undefined>; execPath: string; hasPackageType: boolean }) => boolean;
 };
+
+describe('isAppImageRun', () => {
+  const appImageEnv = { APPIMAGE: '/home/u/Skill Manager.AppImage', APPDIR: '/tmp/.mount_SkillXy' };
+
+  it('запуск из AppImage: APPIMAGE и APPDIR заданы, исполняемый файл внутри APPDIR', () => {
+    expect(isAppImageRun({ env: appImageEnv, execPath: '/tmp/.mount_SkillXy/skill-manager', hasPackageType: false })).toBe(true);
+  });
+
+  it('.deb, запущенный из терминала AppImage-программы (APPIMAGE унаследован), — не AppImage', () => {
+    expect(isAppImageRun({ env: appImageEnv, execPath: '/opt/Skill Manager/skill-manager', hasPackageType: true })).toBe(false);
+    expect(isAppImageRun({ env: appImageEnv, execPath: '/opt/Skill Manager/skill-manager', hasPackageType: false })).toBe(false);
+  });
+
+  it('есть resources/package-type (deb/rpm/pacman) — не AppImage, даже если путь совпал', () => {
+    expect(isAppImageRun({ env: appImageEnv, execPath: '/tmp/.mount_SkillXy/skill-manager', hasPackageType: true })).toBe(false);
+  });
+
+  it('без APPIMAGE или APPDIR — не AppImage', () => {
+    expect(isAppImageRun({ env: {}, execPath: '/tmp/.mount_SkillXy/skill-manager', hasPackageType: false })).toBe(false);
+    expect(isAppImageRun({ env: { APPIMAGE: appImageEnv.APPIMAGE }, execPath: '/tmp/.mount_SkillXy/skill-manager', hasPackageType: false })).toBe(false);
+  });
+
+  it('APPDIR — префикс пути, а не начало имени соседней папки', () => {
+    expect(isAppImageRun({ env: appImageEnv, execPath: '/tmp/.mount_SkillXyZ/skill-manager', hasPackageType: false })).toBe(false);
+  });
+});
 
 describe('updateMode', () => {
   it('выключено, пока приложение не собрано (разработка), на любой ОС', () => {

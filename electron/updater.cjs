@@ -27,7 +27,18 @@ function updateMode({ platform, isPackaged, isAppImage }) {
   return 'notify';
 }
 
-const VERSION_RE = /^v?(\d+)\.(\d+)\.(\d+)$/;
+/**
+ * Запущена ли эта копия из AppImage. Одного APPIMAGE мало: переменная наследуется дочерними процессами,
+ * и .deb, запущенный из терминала AppImage-программы, иначе получил бы режим auto, а electron-updater
+ * (по resources/package-type) — DebUpdater с `pkexec dpkg -i` при выходе.
+ * @param {{ env: Record<string, string | undefined>, execPath: string, hasPackageType: boolean }} o
+ */
+function isAppImageRun({ env, execPath, hasPackageType }) {
+  if (hasPackageType || !env.APPIMAGE || !env.APPDIR) return false;
+  return execPath.startsWith(`${env.APPDIR.replace(/\/+$/, '')}/`);
+}
+
+const VERSION_RE =/^v?(\d+)\.(\d+)\.(\d+)$/;
 
 /** [major, minor, patch] или null, если строка — не версия вида 1.2.3 (с необязательным `v`). */
 function parseVersion(v) {
@@ -112,7 +123,11 @@ function startAuto({ dialog, getWindow, log }) {
   });
 
   schedule(() => {
-    autoUpdater.checkForUpdates().catch((e) => log.error(`проверка обновлений: ${describe(e)}`));
+    autoUpdater
+      .checkForUpdates()
+      // Сбой загрузки уже записан обработчиком 'error'; без catch он стал бы необработанным отказом.
+      .then((r) => r?.downloadPromise?.catch(() => {}))
+      .catch((e) => log.error(`проверка обновлений: ${describe(e)}`));
   });
 }
 
@@ -169,7 +184,17 @@ function startUpdater({ app, dialog, shell, net, getWindow, logDir }) {
     const fakeVersion = app.isPackaged ? undefined : process.env.SKILL_MANAGER_FAKE_VERSION;
     const mode = fakeVersion
       ? 'notify'
-      : updateMode({ platform: process.platform, isPackaged: app.isPackaged, isAppImage: Boolean(process.env.APPIMAGE) });
+      : updateMode({
+          platform: process.platform,
+          isPackaged: app.isPackaged,
+          isAppImage:
+            process.platform === 'linux' &&
+            isAppImageRun({
+              env: process.env,
+              execPath: process.execPath,
+              hasPackageType: fs.existsSync(path.join(process.resourcesPath, 'package-type')),
+            }),
+        });
     const currentVersion = fakeVersion || app.getVersion();
     log.info(`${APP_NAME} ${currentVersion} (${process.platform}), режим обновлений: ${mode}`);
     if (mode === 'auto') startAuto({ dialog, getWindow, log });
@@ -179,4 +204,4 @@ function startUpdater({ app, dialog, shell, net, getWindow, logDir }) {
   }
 }
 
-module.exports = { updateMode, isNewer, startUpdater };
+module.exports = { updateMode, isNewer, isAppImageRun, startUpdater };

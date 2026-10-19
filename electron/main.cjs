@@ -140,7 +140,8 @@ if (!app.requestSingleInstanceLock()) {
       win = null;
     });
     win.once('ready-to-show', () => win?.show());
-    win.loadFile(SPLASH_FILE);
+    // Если сервер ответит раньше, loadURL прервёт заставку (ERR_ABORTED) — это нормально.
+    win.loadFile(SPLASH_FILE).catch(() => {});
   }
 
   function answers(url) {
@@ -241,6 +242,10 @@ if (!app.requestSingleInstanceLock()) {
     killServer();
     app.quit();
   });
+  // Cmd+Q / меню «Выход»: флаг ставим как можно раньше, до закрытия окон.
+  app.on('before-quit', () => {
+    quitting = true;
+  });
   app.on('will-quit', () => {
     quitting = true;
     killServer();
@@ -248,8 +253,14 @@ if (!app.requestSingleInstanceLock()) {
 
   // kill / выключение системы шлют сигнал всем процессам приложения: сервер может умереть первым,
   // и без этого флага окно покажет «сервер неожиданно завершился». Это штатный выход.
+  // Повторный сигнал, пока выход завис, завершает процесс сразу.
   for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
     process.on(sig, () => {
+      if (quitting) {
+        killServer();
+        app.exit(0);
+        return;
+      }
       quitting = true;
       killServer();
       app.quit();

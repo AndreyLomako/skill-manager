@@ -39,6 +39,9 @@ Node.js и браузер не нужны. Git в `PATH` нужен только
 
   Если AppImage не запускается из-за FUSE — установите `libfuse2` (в Ubuntu 24.04 пакет `libfuse2t64`)
   или запустите с ключом `--appimage-extract-and-run`.
+  В Ubuntu 23.10 и новее AppArmor может не дать AppImage запустить песочницу Electron
+  (ошибка про `chrome-sandbox` / «SUID sandbox helper»). В таком случае поставьте `.deb` —
+  у него песочница настраивается при установке.
 - **.deb** (Debian, Ubuntu и производные):
 
   ```sh
@@ -198,7 +201,11 @@ npm version minor      # или patch: меняет версию в package.json
 git push --follow-tags
 ```
 
-Тег `v*` запускает `.github/workflows/release.yml`: на Windows, macOS и Linux прогоняются тесты,
+Тег `vX.Y.Z` запускает `.github/workflows/release.yml`. Сначала проверяется, что тег совпадает с версией
+в `package.json`, и создаётся черновик релиза. Затем на Windows, macOS и Linux прогоняются типы и тесты,
 собираются установщики, и `npm run release` выкладывает их вместе с `latest.yml`, `latest-mac.yml`
-и `latest-linux.yml` в релиз GitHub этого тега. Установленные копии увидят новую версию при следующей
-проверке. Каждый push и pull request проверяет `.github/workflows/ci.yml` (типы, тесты, сборка на трёх ОС).
+и `latest-linux.yml` в этот черновик. Он публикуется, только когда все три сборки прошли и все `latest*.yml`
+на месте. Если одна сборка упала, черновик остаётся неопубликованным; после исправления перезапустите
+упавшие задачи («Re-run failed jobs»). Пред-релизные теги (`v1.0.0-beta.1`) релиз не запускают.
+Установленные копии увидят новую версию при следующей проверке. Каждый push в ветку и каждый pull request
+проверяет `.github/workflows/ci.yml` (типы, тесты, сборка на трёх ОС).
