@@ -28,6 +28,9 @@ const TRACE_EXCLUDES = [
   'catalog/**',
   'package-lock.json',
   '*.md',
+  // next/image не используется; sharp трассируется под ОС сборщика (на mac x64 приезжал arm64-бинарник).
+  'node_modules/sharp/**',
+  'node_modules/@img/**',
 ];
 
 const nextConfig: NextConfig = {
