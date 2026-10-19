@@ -3,12 +3,25 @@
 ## Текущая работа
 
 **Автообновления + macOS и Linux** — эпик beads `interface-e7r`.
-Ветка `feat/updates-crossplatform` (последний коммит `c7ae4a3`). **В `main` не влита, на GitHub не отправлена.**
+Ветка `feat/updates-crossplatform`. **В `main` не влита, на GitHub не отправлена.**
 Дизайн: [specs/2026-10-18-skill-manager-updates-crossplatform-design.md](specs/2026-10-18-skill-manager-updates-crossplatform-design.md).
 
-Остановились на шаге 2 «Ревью Electron/updater/CI-части» — пакет для ревью уже подготовлен (см. ниже), само ревью ещё не запускалось.
+Шаги 1–2 (проверка в WSL, ревью Electron/updater/CI) сделаны. **Следующий шаг — 3 «Заменить email в истории».** Шаги 3–5 необратимы (переписывание истории, force-push, открытие репозитория): перед ними нужно подтверждение пользователя.
 
-## Сделано 2026-10-19
+## Сделано 2026-10-19, вечер — ревью Electron/updater/CI (`interface-e7r.1`)
+
+Ревью диффа `be6f9a2..c7ae4a3`: критичных замечаний нет. Исправлено в коммите `659bd4e`:
+- **`release.yml`:** тег обязан совпадать с версией в `package.json` (иначе electron-builder создал бы по черновику на каждую ОС, а опубликовался бы пустой релиз). Черновик создаётся, только если его ещё нет, поэтому перезапуск безопасен. Триггер только на `vX.Y.Z`: пред-релизы клиенты не понимают. Публикация идёт, только если в черновике есть `latest.yml`, `latest-mac.yml` и `latest-linux.yml`. Добавлены `tsc`, `concurrency`, таймауты.
+- **`ci.yml`:** только ветки и PR (теги проверяет Release), `permissions: contents: read`, `concurrency`, таймаут.
+- **`.deb` больше не может включить автообновление.** Раньше хватало унаследованного `APPIMAGE` (например, запуск из терминала Cursor). Тогда electron-updater по `resources/package-type` выбирал DebUpdater и при выходе запускал `pkexec dpkg -i`. Теперь `isAppImageRun` требует `APPIMAGE` и `APPDIR`, `execPath` внутри `APPDIR` и отсутствие `package-type`. Покрыто тестами. **Воспроизведено и проверено в WSL:** старый `.deb` с `APPIMAGE=… APPDIR=…` показывал `режим обновлений: auto`, новый показывает `notify`.
+- Отклонённый `downloadPromise` electron-updater больше не становится необработанным отказом. Прерванная загрузка заставки (`ERR_ABORTED`) игнорируется. Флаг выхода ставится уже на `before-quit`. Повторный SIGTERM сразу завершает процесс (проверено в WSL: код 0, процессов не осталось).
+- README: про AppArmor в Ubuntu 23.10+ для AppImage (совет ставить `.deb`), подробный порядок выпуска версии.
+- **AppImage запущен в WSL** (`APPIMAGE_EXTRACT_AND_RUN=1`): стартует, режим `auto`. В WSL AppArmor не действует, так что на настоящем рабочем столе Ubuntu 24.04 запуск AppImage ещё не проверен.
+- Проверено: Windows — `tsc` чистый, 251 тест; Linux (WSL) — `tsc` чистый, 239 прошли, 12 пропущены.
+- Скрипты проверки в WSL: `.superpowers/sdd/wsl-verify.sh`, `wsl-appimage.sh`, `wsl-install-root.sh` (последний запускать через `wsl -u root`: `sudo` в WSL просит пароль).
+- Ошибки, которые пока видны в `updater.log`: 404 от GitHub, потому что репозиторий приватный. После шага 5 должно пройти.
+
+## Сделано 2026-10-19, утро
 
 - **Linux проверен вживую в WSL** (Ubuntu 24.04): `.deb` ставится через `apt` вместе с зависимостями, приложение запускается под WSLg, сервер отвечает за 2 с, лог чистый, обновления в режиме `notify` (как и задумано для `.deb`). Ошибки `SharedImage failed` в stderr — ограничение GPU в WSLg, не наши.
 - **Баг `interface-po7` (закрыт):** в `.deb` не хватало зависимостей — на минимальной системе падал с `libasound.so.2`. В `package.json → build.deb.depends` добавлены `libasound2t64 | libasound2`, `libgbm1`, `libdrm2`, `libxkbcommon0` (+ список electron-builder по умолчанию), `recommends: git`. Проверено переустановкой.
@@ -49,14 +62,8 @@
 
 ## Что осталось — по порядку
 
-1. ~~Запустить Linux-версию в WSL~~ — **сделано** (см. выше). Не проверен только запуск AppImage (зависимости в WSL теперь есть):
-   `wsl -d Ubuntu-24.04 -- bash -lc 'cd ~/sm/dist && APPIMAGE_EXTRACT_AND_RUN=1 "./Skill Manager-0.1.0.AppImage"'`.
-   В WSL: Node 24.22 через nvm (`. ~/.nvm/nvm.sh`), клон ветки в `~/sm`, установлен пакет `skill-manager` (`/opt/Skill Manager/skill-manager`, данные `~/.config/Skill Manager/`).
-2. **Ревью Electron/updater/CI-части** — **следующий шаг.** Пакет готов: `.superpowers/sdd/review-be6f9a2..c7ae4a3.diff` (11 коммитов, без package-lock). Проверить:
-   - `updater.cjs`: режимы по ОС (Windows NSIS и AppImage — auto, `.deb` и mac — notify, dev — off), сравнение версий, расписание проверок, поведение без сети и при лимите GitHub API (60 запросов/ч без токена), что `SKILL_MANAGER_FAKE_VERSION` не влияет на собранную версию, автообновление неподписанного Windows-приложения;
-   - `release.yml`/`ci.yml`: черновик → загрузка из матрицы в тот же черновик → публикация; что будет при падении одной сборки; права; связка тега и версии;
-   - конфиг electron-builder для mac/linux, имена файлов против `latest*.yml`;
-   - `main.cjs`: заставка через `loadFile` в sandbox, есть ли путь, где окно так и не покажется; обработка сигналов и пауза 500 мс (не маскирует ли настоящий сбой); меню macOS.
+1. ~~Запустить Linux-версию в WSL~~ — **сделано** (`.deb` и AppImage).
+2. ~~Ревью Electron/updater/CI-части~~ — **сделано** (см. выше, `interface-e7r.1`).
 3. **Заменить email в истории** (решение пользователя: анонимный адрес GitHub). Адрес: `98387798+AndreyLomako@users.noreply.github.com`.
    ```bash
    git config user.email "98387798+AndreyLomako@users.noreply.github.com"
