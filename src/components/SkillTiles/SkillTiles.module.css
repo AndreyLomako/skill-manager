@@ -1,15 +1,12 @@
 .skills {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 52%;
-  height: 52%;
-  transform: translate(-50%, -50%);
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   align-content: safe center;
+  align-items: start;
   gap: 10px;
-  padding: 8px;
+  padding: 10px 8px;
   overflow-y: auto;
   scrollbar-width: thin;
   mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 12px), transparent);
@@ -20,3 +17,4 @@
   font-size: 14px;
   color: var(--color-text-dim);
 }
+.skills__add { align-self: stretch; }

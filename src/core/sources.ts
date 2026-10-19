@@ -6,6 +6,17 @@ import type { Layer, SourceDef } from './types';
 
 export type GitRunner = (args: string[], cwd?: string) => Promise<void>;
 
+/** Суть ошибки git: строки fatal:/error: без префиксов; иначе начало stderr или запасной текст. */
+export function gitErrorMessage(stderr: string, fallback: string): string {
+  const lines = stderr
+    .split(/\r?\n/)
+    .map((l) => /^(?:fatal|error):\s*(.*)$/.exec(l.trim())?.[1])
+    .filter((l): l is string => Boolean(l));
+  if (lines.length > 0) return lines.join('; ');
+  const text = stderr.trim();
+  return text ? text.slice(0, 300) : fallback;
+}
+
 export const runGit: GitRunner = (args, cwd) =>
   new Promise((resolve, reject) => {
     execFile(
@@ -18,7 +29,7 @@ export const runGit: GitRunner = (args, cwd) =>
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
       },
       (err, _stdout, stderr) => {
-        if (err) reject(new Error(String(stderr).trim() || err.message));
+        if (err) reject(new Error(gitErrorMessage(String(stderr), err.message)));
         else resolve();
       },
     );
@@ -40,6 +51,8 @@ export interface EnsureSourceOpts {
   sparse?: string[];
   /** false — не клонировать отсутствующий git-источник (быстрая первая отрисовка), а бросить NotClonedError. */
   clone?: boolean;
+  /** Пауза перед повтором неудачного клона (сетевые сбои); по умолчанию 1,5 с. */
+  retryDelayMs?: number;
 }
 
 /** git-источник ещё не загружен, а клонирование отключено. */
@@ -122,20 +135,25 @@ async function ensureGitSource(
 
   if (opts.clone === false) throw new NotClonedError('Источник ещё не загружен');
   await mkdir(opts.cacheDir, { recursive: true });
-  const tmp = `${dir}.tmp-${Date.now()}`;
   const args = ['clone', '--depth', '1'];
   // Сервер без поддержки фильтра просто пришлёт всё — git предупредит и продолжит.
   if (sparse) args.push('--filter=blob:none', '--sparse');
   if (src.ref) args.push('--branch', src.ref);
-  args.push('--', src.url, tmp);
-  try {
-    await git(args);
-    if (sparse) await applySparse(tmp, sparse, git);
-    await rm(dir, { recursive: true, force: true });
-    await renameWithRetry(tmp, dir);
-  } catch (e) {
-    await rm(tmp, { recursive: true, force: true }).catch(() => {});
-    throw e;
+  // Один повтор: частичный клон докачивает файлы отдельными запросами, и разовый обрыв сети
+  // иначе оставил бы скилл недоступным до ручного «Обновить каталог».
+  for (let attempt = 1; ; attempt++) {
+    const tmp = `${dir}.tmp-${Date.now()}`;
+    try {
+      await git([...args, '--', src.url, tmp]);
+      if (sparse) await applySparse(tmp, sparse, git);
+      await rm(dir, { recursive: true, force: true });
+      await renameWithRetry(tmp, dir);
+      break;
+    } catch (e) {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {});
+      if (attempt >= 2) throw e;
+      await new Promise((r) => setTimeout(r, opts.retryDelayMs ?? 1500));
+    }
   }
   return dir;
 }

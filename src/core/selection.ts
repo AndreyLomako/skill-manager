@@ -7,6 +7,7 @@ import type {
   InstalledState,
   InstalledStatus,
   ProjectSource,
+  SkillCommand,
 } from './types';
 
 export const MY_SKILLS = '__my__';
@@ -191,4 +192,34 @@ export function summarizeByCategory(
 export function clientPathKey(p: string, userAgent: string): string {
   const caseSensitive = userAgent.includes('Linux') && !userAgent.includes('Android');
   return caseSensitive ? p : p.toLowerCase();
+}
+
+/**
+ * Чипы команд для карточки: если у всех команд общий первый токен («/impeccable»),
+ * он показывается один раз, а в чипах — подкоманды.
+ */
+export function commandChips(
+  commands: readonly SkillCommand[],
+  max: number,
+): { prefix: string | null; chips: string[] } {
+  const shown = commands.slice(0, max).map((c) => c.cmd.trim());
+  const heads = shown.map((c) => c.split(/\s+/));
+  const head = heads[0]?.[0];
+  const shared = shown.length > 1 && heads.every((h) => h.length > 1 && h[0] === head);
+  return shared ? { prefix: head!, chips: heads.map((h) => h.slice(1).join(' ')) } : { prefix: null, chips: shown };
+}
+
+/** Куда можно положить скилл: категории без подкатегорий, подпись — «Видео › Монтаж». */
+export function leafCategories(categories: readonly CategoryDef[]): CategoryDef[] {
+  const parents = new Set(categories.flatMap((c) => (c.parent ? [c.parent] : [])));
+  return categories.filter((c) => !parents.has(c.id)).map((c) => ({ ...c, title: categoryPath(categories, c.id) }));
+}
+
+/** Подпись установленного скилла: для скиллов из каталога — название и описание каталога. */
+export function installedLabel(
+  item: InstalledSkill,
+  skills: readonly CatalogSkill[],
+): { title: string; description: string } {
+  const own = item.kind === 'managed' ? skills.find((s) => s.id === item.name) : undefined;
+  return own ? { title: own.title, description: own.summary || item.description } : { title: item.title, description: item.description };
 }

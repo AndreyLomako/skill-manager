@@ -1,21 +1,24 @@
 .installed {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 52%;
-  height: 52%;
-  transform: translate(-50%, -50%);
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  align-content: safe center;
-  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   padding: 14px 8px;
   overflow-y: auto;
   scrollbar-width: thin;
   mask-image: linear-gradient(to bottom, transparent, #000 12px, #000 calc(100% - 12px), transparent);
 }
+/* Короткий список — по центру, длинный прокручивается с начала */
+.installed > :first-child { margin-top: auto; }
+.installed > :last-child { margin-bottom: auto; }
+
+.installed__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+}
 .installed__empty {
-  grid-column: 1 / -1;
   text-align: center;
   font-size: 14px;
   color: var(--color-text-dim);
@@ -45,3 +48,40 @@
 .installed__item:focus-within .installed__remove,
 .installed__remove:focus-visible { opacity: 1; }
 .installed__remove:hover { background: rgba(255, 107, 138, 0.35); }
+
+.installed__pack {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-radius: var(--radius-tile);
+  border: 1px solid rgba(157, 77, 255, 0.3);
+  background: rgba(157, 77, 255, 0.06);
+}
+.installed__packHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.installed__packTitle { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; font-weight: 600; }
+.installed__packName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.installed__packCount {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: rgba(157, 77, 255, 0.3);
+}
+.installed__packRemove {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  white-space: nowrap;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-text-dim);
+  border: 1px solid var(--glass-border);
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.installed__packRemove:hover {
+  color: var(--color-text);
+  background: rgba(255, 107, 138, 0.25);
+  border-color: rgba(255, 107, 138, 0.5);
+}

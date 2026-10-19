@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   agentsOf,
   categoryPath,
+  commandChips,
   childCategories,
   groupInstalled,
+  installedLabel,
+  leafCategories,
   packsForCategory,
   packState,
   togglePack,
@@ -169,5 +172,49 @@ describe('selection: подкатегории и паки', () => {
       ['pk', ['managed:p2', 'managed:p1']],
     ]);
     expect(groupInstalled([item('imp')], sk, [pack]).map((g) => g.pack?.id ?? null)).toEqual([null]);
+  });
+});
+
+describe('commandChips', () => {
+  const c = (cmd: string) => ({ cmd, hint: '' });
+  it('общий префикс /skill выносится, чипы — подкоманды (не больше max)', () => {
+    expect(commandChips([c('/impeccable critique'), c('/impeccable audit'), c('/impeccable polish'), c('/impeccable shape')], 3)).toEqual({
+      prefix: '/impeccable',
+      chips: ['critique', 'audit', 'polish'],
+    });
+  });
+  it('разные команды — без префикса', () => {
+    expect(commandChips([c('/cut'), c('/subs fix')], 3)).toEqual({ prefix: null, chips: ['/cut', '/subs fix'] });
+  });
+  it('одна команда — целиком; пусто — пусто', () => {
+    expect(commandChips([c('/impeccable critique')], 3)).toEqual({ prefix: null, chips: ['/impeccable critique'] });
+    expect(commandChips([], 3)).toEqual({ prefix: null, chips: [] });
+  });
+});
+
+describe('leafCategories', () => {
+  it('категории без подкатегорий, подпись — путь', () => {
+    const cats = [
+      { id: 'design', title: 'Дизайн' },
+      { id: 'video', title: 'Видео' },
+      { id: 'cut', title: 'Монтаж', parent: 'video' },
+    ];
+    expect(leafCategories(cats).map((c) => [c.id, c.title])).toEqual([
+      ['design', 'Дизайн'],
+      ['cut', 'Видео › Монтаж'],
+    ]);
+  });
+});
+
+describe('installedLabel', () => {
+  const item = (over: Partial<InstalledSkill>) =>
+    ({ name: 'impeccable', title: 'impeccable', description: 'Use when…', agent: 'claude', kind: 'managed', dir: 'd', root: 'r', ...over }) as InstalledSkill;
+  const sk = [catalogSkill({ id: 'impeccable', title: 'Impeccable', summary: 'Дизайн-директор' })];
+  it('скилл из каталога — название и описание каталога', () => {
+    expect(installedLabel(item({}), sk)).toEqual({ title: 'Impeccable', description: 'Дизайн-директор' });
+  });
+  it('чужой скилл или плагин с тем же именем — как есть', () => {
+    expect(installedLabel(item({ name: 'other', title: 'other' }), sk)).toEqual({ title: 'other', description: 'Use when…' });
+    expect(installedLabel(item({ kind: 'plugin' }), sk)).toEqual({ title: 'impeccable', description: 'Use when…' });
   });
 });

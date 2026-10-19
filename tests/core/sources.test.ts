@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ensureSource, runGit, sourceCacheDir } from '../../src/core/sources';
+import { ensureSource, gitErrorMessage, runGit, sourceCacheDir } from '../../src/core/sources';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 
 afterEach(cleanupTmp);
@@ -233,5 +233,40 @@ describe('ensureSource', () => {
       expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
       expect(await has(path.join(dir, 'skills/demo/SKILL.md'))).toBe(true);
     });
+  });
+});
+
+describe('git: устойчивость', () => {
+  it('сбой клонирования повторяется один раз', async () => {
+    const root = await tmpDir();
+    let clones = 0;
+    const flaky = async (args: string[]) => {
+      if (args[0] === 'clone') {
+        clones++;
+        if (clones === 1) throw new Error('fatal: unable to access: SSL_ERROR_SYSCALL');
+        await mkdir(path.join(args[args.length - 1], '.git'), { recursive: true });
+      }
+    };
+    const dir = await ensureSource(
+      { id: 'demo', type: 'git', url: 'https://example.invalid/r.git' },
+      { layer: 'base', manifestDir: root, cacheDir: path.join(root, '.cache'), update: false, retryDelayMs: 0 },
+      flaky,
+    );
+    expect(clones).toBe(2);
+    expect(dir).toBe(sourceCacheDir(path.join(root, '.cache'), 'base', 'demo'));
+  });
+
+  it('gitErrorMessage оставляет строки fatal:/error:, без «Cloning into…» и подсказок', () => {
+    const stderr = [
+      "Cloning into 'C:\cache\base-x.tmp-1'...",
+      "fatal: unable to access 'https://github.com/o/r.git/': OpenSSL SSL_connect: SSL_ERROR_SYSCALL",
+      'fatal: could not fetch 7962dcf from promisor remote',
+      "warning: Clone succeeded, but checkout failed.",
+      "You can inspect what was checked out with 'git status'",
+    ].join('\n');
+    expect(gitErrorMessage(stderr, 'git clone')).toBe(
+      "unable to access 'https://github.com/o/r.git/': OpenSSL SSL_connect: SSL_ERROR_SYSCALL; could not fetch 7962dcf from promisor remote",
+    );
+    expect(gitErrorMessage('', 'spawn git ENOENT')).toBe('spawn git ENOENT');
   });
 });

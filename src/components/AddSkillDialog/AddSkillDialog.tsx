@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { addUserSkillAction } from '@/app/actions';
+import { leafCategories } from '@/core/selection';
 import type { Catalog, CategoryDef } from '@/core/types';
 import type { NewUserSkill } from '@/core/user-catalog';
 import { Dialog } from '../Dialog/Dialog';
@@ -17,7 +18,8 @@ interface Props {
   onError(): void;
 }
 
-export function AddSkillDialog({ categories, onClose, onAdded, onError }: Props) {
+export function AddSkillDialog({ categories: allCategories, onClose, onAdded, onError }: Props) {
+  const categories = leafCategories(allCategories);
   const [kind, setKind] = useState<NewUserSkill['kind']>('git');
   const [location, setLocation] = useState('');
   const [ref, setRef] = useState('');

@@ -17,25 +17,41 @@ import {
   GLOBAL_PROJECT,
   INSTALLED,
   agentsOf,
+  childCategories,
   clientPathKey,
   countByCategory,
   defaultAgentChoice,
+  groupInstalled,
   mergeInstalled,
   MY_SKILLS,
+  packsForCategory,
   pruneSelection,
   skillsForCategory,
   toggleSelection,
+  togglePack,
+  topCategories,
   type AgentChoice,
 } from '@/core/selection';
-import type { AgentId, Catalog, InstallResult, InstalledSkill, InstalledState, Scope } from '@/core/types';
+import type {
+  AgentId,
+  Catalog,
+  CatalogPack,
+  InstallResult,
+  InstalledSkill,
+  InstalledState,
+  Scope,
+  TrashEntry,
+} from '@/core/types';
 import { AddSkillDialog } from '../AddSkillDialog/AddSkillDialog';
 import { Blob, type BlobHandle, type BlobPulse } from '../Blob/Blob';
 import { Cart } from '../Cart/Cart';
+import { CatalogErrors } from '../CatalogErrors/CatalogErrors';
 import { CategoryRing } from '../CategoryRing/CategoryRing';
 import { Dialog } from '../Dialog/Dialog';
 import { InstalledTiles } from '../InstalledTiles/InstalledTiles';
 import { ProjectList } from '../ProjectList/ProjectList';
 import { SkillTiles } from '../SkillTiles/SkillTiles';
+import { SubcategoryTabs } from '../SubcategoryTabs/SubcategoryTabs';
 import { Icon } from '../Icon/Icon';
 import { Tile } from '../Tile/Tile';
 import { Notice, type NoticeData } from '../Notice/Notice';
@@ -44,7 +60,7 @@ import styles from './SkillsSection.module.css';
 const STATUS_TEXT: Record<InstallResult['status'], string> = {
   installed: '✓ установлен',
   'already-installed': '• уже был установлен',
-  unsupported: '— пропущен',
+  unsupported: '• пропущен',
   error: '✗ ошибка',
 };
 
@@ -61,7 +77,9 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
   const [activePath, setActivePath] = useState<string | null>(
     () => initialProjects.projects.find((p) => p.active)?.path ?? initialProjects.projects[0]?.path ?? null,
   );
-  const [category, setCategory] = useState(() => initialCatalog.categories[0]?.id ?? MY_SKILLS);
+  const [category, setCategory] = useState(() => topCategories(initialCatalog.categories)[0]?.id ?? MY_SKILLS);
+  // Выбранная подкатегория для каждой категории верхнего уровня
+  const [subcategory, setSubcategory] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<string[]>([]);
   const [installed, setInstalled] = useState<Partial<Record<AgentId, InstalledState>>>({});
   const [agentChoice, setAgentChoice] = useState<AgentChoice>(() =>
@@ -77,6 +95,12 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{ item: InstalledSkill; scope: Scope; scopeKey: string | null } | null>(null);
+  const [removingPack, setRemovingPack] = useState<{
+    pack: CatalogPack;
+    items: InstalledSkill[];
+    scope: Scope;
+    scopeKey: string | null;
+  } | null>(null);
   const [noticeBusy, setNoticeBusy] = useState(false);
 
   const activePathRef = useRef(activePath);
@@ -105,6 +129,20 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
 
   const pulse = useCallback((kind: BlobPulse) => blob.current?.pulse(kind), []);
   const hover = useCallback(() => pulse('hover'), [pulse]);
+
+  // Первая отрисовка не ждёт загрузки git-источников — догружаем каталог сразу после показа.
+  useEffect(() => {
+    if (!initialCatalog.skills.some((s) => s.pending)) return;
+    let alive = true;
+    getCatalogAction(false)
+      .then((res) => {
+        if (alive && res.ok) setCatalog(res.catalog);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [initialCatalog]);
 
   // Живое обновление списка проектов VS Code
   useEffect(() => {
@@ -188,6 +226,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
   useEffect(() => {
     setUpdating(null);
     setRemoving(null);
+    setRemovingPack(null);
   }, [scopeKey, agentChoice]);
 
   // Список «Установлено»: при входе в категорию и смене проекта/агента
@@ -218,13 +257,33 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const counts = useMemo(() => countByCategory(selected, catalog.skills), [selected, catalog.skills]);
-  const visible = useMemo(() => skillsForCategory(catalog.skills, category), [catalog.skills, category]);
+  const counts = useMemo(
+    () => countByCategory(selected, catalog.skills, catalog.categories),
+    [selected, catalog.skills, catalog.categories],
+  );
+  const children = useMemo(() => childCategories(catalog.categories, category), [catalog.categories, category]);
+  const activeSub = children.length === 0 ? null : (children.find((c) => c.id === subcategory[category]) ?? children[0]).id;
+  const gridCategory = activeSub ?? category;
+  const visible = useMemo(() => skillsForCategory(catalog.skills, gridCategory), [catalog.skills, gridCategory]);
+  const visiblePacks = useMemo(
+    () => (gridCategory === MY_SKILLS ? [] : packsForCategory(catalog.packs, gridCategory)),
+    [catalog.packs, gridCategory],
+  );
+  const mergedInstalled = useMemo(() => mergeInstalled(installed, agentsOf(agentChoice)), [installed, agentChoice]);
+  const installedGroups = useMemo(
+    () => groupInstalled(installedList, catalog.skills, catalog.packs),
+    [installedList, catalog.skills, catalog.packs],
+  );
   const selectedSkills = useMemo(() => catalog.skills.filter((s) => selected.includes(s.id)), [catalog.skills, selected]);
   const titleOf = (id: string) => catalog.skills.find((s) => s.id === id)?.title ?? id;
 
   const toggle = (id: string) => {
     setSelected((sel) => toggleSelection(sel, id));
+    pulse('select');
+  };
+
+  const choosePack = (pack: CatalogPack) => {
+    setSelected((sel) => togglePack(sel, pack, catalog.skills, mergedInstalled));
     pulse('select');
   };
 
@@ -298,6 +357,57 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     await refreshAfterChange(targetScope, targetKey);
   };
 
+  const confirmRemovePack = async () => {
+    if (!removingPack) return;
+    const { pack, items, scope: targetScope, scopeKey: targetKey } = removingPack;
+    setRemovingPack(null);
+    const entries: TrashEntry[] = [];
+    const failed: string[] = [];
+    for (const item of items) {
+      try {
+        const res = await removeSkillAction(targetScope, item.agent, item.name, item.root);
+        if (res.ok) entries.push(res.entry);
+        else failed.push(`${item.title}: ${res.error}`);
+      } catch (e) {
+        failed.push(`${item.title}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    pulse(failed.length > 0 ? 'error' : 'success');
+    setNotice({
+      tone: failed.length > 0 ? 'error' : 'success',
+      title: failed.length > 0 ? `Пак «${pack.title}» удалён не полностью` : `Удалён пак «${pack.title}»`,
+      lines: failed,
+      action:
+        entries.length > 0
+          ? { label: 'Вернуть все', onClick: () => void restoreAll(entries, pack.title, targetScope, targetKey) }
+          : undefined,
+    });
+    await refreshAfterChange(targetScope, targetKey);
+  };
+
+  const restoreAll = async (entries: TrashEntry[], title: string, targetScope: Scope, targetKey: string | null) => {
+    setNoticeBusy(true);
+    const failed: string[] = [];
+    try {
+      for (const e of entries) {
+        const res = await restoreSkillAction(e.id).catch((err: unknown) => ({
+          ok: false as const,
+          error: err instanceof Error ? err.message : String(err),
+        }));
+        if (!res.ok) failed.push(`${e.name}: ${res.error}`);
+      }
+    } finally {
+      setNoticeBusy(false);
+    }
+    pulse(failed.length > 0 ? 'error' : 'success');
+    setNotice(
+      failed.length > 0
+        ? { tone: 'error', title: 'Вернулось не всё', lines: failed }
+        : { tone: 'success', title: `Возвращён пак «${title}»`, lines: [] },
+    );
+    await refreshAfterChange(targetScope, targetKey);
+  };
+
   const restore = async (id: string, title: string, targetScope: Scope, targetKey: string | null) => {
     setNoticeBusy(true);
     try {
@@ -354,6 +464,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
   return (
     <>
       <div className={styles.actions}>
+        <CatalogErrors errors={catalog.errors} />
         <Tile
           title={refreshing ? 'Обновляю каталог…' : 'Обновить каталог'}
           marker="↻"
@@ -369,6 +480,8 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
         error={projects.error}
         onSelect={(p) => {
           setActivePath(p);
+          // «Глобально» сразу показывает всё, что установлено на компьютере.
+          if (p === GLOBAL_PROJECT) setCategory(INSTALLED);
           pulse('select');
         }}
         onAddFolder={addFolder}
@@ -379,7 +492,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
         <div className={styles.stage}>
           <Blob ref={blob} />
           <CategoryRing
-            categories={catalog.categories}
+            categories={topCategories(catalog.categories)}
             active={category}
             counts={counts}
             onSelect={(id) => {
@@ -388,38 +501,51 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
             }}
             onHover={hover}
           />
-          {category === INSTALLED ? (
-            <InstalledTiles
-              key={INSTALLED}
-              items={installedList}
-              showAgent={agentChoice === 'both'}
-              loading={listLoading}
-              error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
-              onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
-              onUpdate={(item) => setUpdating({ id: item.name, agent: item.agent })}
-              onHover={hover}
-            />
-          ) : (
-            <SkillTiles
-              key={category}
-              skills={visible}
-              selected={selected}
-              installed={mergeInstalled(installed, agentsOf(agentChoice))}
-              showAdd={category === MY_SKILLS}
-              onToggle={toggle}
-              onUpdate={(id) => setUpdating({ id, agent: null })}
-              onAdd={() => setAdding(true)}
-              onHover={hover}
-            />
-          )}
+          <div className={styles.orb}>
+            {category !== INSTALLED && activeSub && (
+              <SubcategoryTabs
+                items={children}
+                active={activeSub}
+                counts={counts}
+                onSelect={(id) => {
+                  setSubcategory((m) => ({ ...m, [category]: id }));
+                  pulse('select');
+                }}
+                onHover={hover}
+              />
+            )}
+            {category === INSTALLED ? (
+              <InstalledTiles
+                key={INSTALLED}
+                groups={installedGroups}
+                skills={catalog.skills}
+                showAgent={agentChoice === 'both'}
+                loading={listLoading}
+                error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
+                onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
+                onRemovePack={(pack, items) => scope && setRemovingPack({ pack, items, scope, scopeKey })}
+                onUpdate={(item) => setUpdating({ id: item.name, agent: item.agent })}
+                onHover={hover}
+              />
+            ) : (
+              <SkillTiles
+                key={gridCategory}
+                skills={visible}
+                packs={visiblePacks}
+                allSkills={catalog.skills}
+                selected={selected}
+                installed={mergedInstalled}
+                showAdd={category === MY_SKILLS}
+                emptyText="Скоро здесь появятся скиллы"
+                onToggle={toggle}
+                onTogglePack={choosePack}
+                onUpdate={(id) => setUpdating({ id, agent: null })}
+                onAdd={() => setAdding(true)}
+                onHover={hover}
+              />
+            )}
+          </div>
         </div>
-        {catalog.errors.length > 0 && (
-          <ul className={styles.app__errors}>
-            {catalog.errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
-        )}
       </main>
 
       <Cart
@@ -466,6 +592,18 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
           <div className={styles.dialog__actions}>
             <Tile title="Удалить" marker={<Icon name="trash" />} tone="warning" onClick={() => void confirmRemove()} />
             <Tile title="Отмена" onClick={() => setRemoving(null)} />
+          </div>
+        </Dialog>
+      )}
+
+      {removingPack && (
+        <Dialog title="Удалить пак?" onClose={() => setRemovingPack(null)}>
+          <p className={styles.dialog__text}>
+            Пак «{removingPack.pack.title}»: скиллов — {removingPack.items.length}, все они будут перенесены в корзину приложения. Вернуть можно сразу из уведомления; через 30 дней корзина очищается.
+          </p>
+          <div className={styles.dialog__actions}>
+            <Tile title="Удалить пак" marker={<Icon name="trash" />} tone="warning" onClick={() => void confirmRemovePack()} />
+            <Tile title="Отмена" onClick={() => setRemovingPack(null)} />
           </div>
         </Dialog>
       )}
