@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readdir, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { parseManifest } from '../../src/core/manifest';
-import { addUserSkill, slugify, type NewUserSkill } from '../../src/core/user-catalog';
+import { runGit, sourceCacheDir } from '../../src/core/sources';
+import { addUserSkill, slugify, verifyUserSkill, type NewUserSkill } from '../../src/core/user-catalog';
 import type { SourceDef } from '../../src/core/types';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
 
@@ -101,5 +103,62 @@ describe('addUserSkill', () => {
     const userDir = path.join(await tmpDir(), 'user');
     const input = { kind: 'svn', location: 'x', category: 'g' } as unknown as NewUserSkill;
     await expect(addUserSkill(userDir, input)).rejects.toThrow('Неизвестный тип источника');
+  });
+
+  it('путь скилла нормализуется; путь за пределы источника отклоняется', async () => {
+    const userDir = path.join(await tmpDir(), 'user');
+    const base = { kind: 'git' as const, location: 'https://github.com/o/r', category: 'g' };
+    await addUserSkill(userDir, { ...base, skillPath: './skills/a/' });
+    expect((await read(userDir)).skills[0].path).toBe('skills/a');
+    await expect(addUserSkill(userDir, { ...base, skillPath: '../x' })).rejects.toThrow(/за пределы/);
+  });
+});
+
+describe('verifyUserSkill (настоящий git)', () => {
+  const GIT_ID = ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', '-c', 'commit.gpgsign=false'];
+  const has = (p: string) => access(p).then(() => true, () => false);
+
+  async function setup() {
+    const root = await tmpDir();
+    const origin = path.join(root, 'origin');
+    await writeFiles(origin, {
+      'skills/a/SKILL.md': '---\nname: A\n---\n',
+      'skills/b/SKILL.md': '---\nname: B\n---\n',
+      'big/blob.txt': 'x'.repeat(100_000),
+    });
+    await runGit(['init', '-b', 'main'], origin);
+    await runGit(['config', 'uploadpack.allowFilter', 'true'], origin);
+    await runGit(['add', '.'], origin);
+    await runGit([...GIT_ID, 'commit', '-m', 'v1'], origin);
+    const dirs = { userDir: path.join(root, 'user'), cacheDir: path.join(root, 'cache') };
+    const location = pathToFileURL(origin).href;
+    const add = (skillPath: string) =>
+      addUserSkill(dirs.userDir, { kind: 'git', location, skillPath, category: 'g' }, (src, p, m) =>
+        verifyUserSkill(dirs, src, p, m),
+      );
+    return { dirs, add };
+  }
+
+  it('новый источник клонируется частично', async () => {
+    const { dirs, add } = await setup();
+    await add('skills/a');
+    const cache = sourceCacheDir(dirs.cacheDir, 'user', (await read(dirs.userDir)).sources[0].id);
+    expect(await has(path.join(cache, 'skills/a/SKILL.md'))).toBe(true);
+    expect(await has(path.join(cache, 'big/blob.txt'))).toBe(false);
+  });
+
+  it('второй скилл из того же частичного клона находится', async () => {
+    const { dirs, add } = await setup();
+    await add('skills/a');
+    await expect(add('skills/b')).resolves.toEqual({ skillId: 'b' });
+    expect((await read(dirs.userDir)).skills.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+
+  it('несуществующий путь — ошибка, файл каталога не меняется', async () => {
+    const { dirs, add } = await setup();
+    await add('skills/a');
+    const before = await readFile(path.join(dirs.userDir, 'user-catalog.json'), 'utf8');
+    await expect(add('skills/nope')).rejects.toThrow(/SKILL.md не найден/);
+    expect(await readFile(path.join(dirs.userDir, 'user-catalog.json'), 'utf8')).toBe(before);
   });
 });

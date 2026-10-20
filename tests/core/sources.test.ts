@@ -233,6 +233,30 @@ describe('ensureSource', () => {
       expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
       expect(await has(path.join(dir, 'skills/demo/SKILL.md'))).toBe(true);
     });
+
+    it('частичный клон становится полным, когда нужен весь репозиторий', async () => {
+      const root = await tmpDir();
+      const origin = await makeBigRepo(root);
+      const src = { id: 'big', type: 'git' as const, url: pathToFileURL(origin).href };
+      const opts = { layer: 'base' as const, manifestDir: root, cacheDir: path.join(root, '.cache'), update: false };
+      const dir = await ensureSource(src, { ...opts, sparse: ['skills/demo'] });
+      expect(await has(path.join(dir, 'README.md'))).toBe(false);
+
+      await ensureSource(src, opts);
+      expect(await has(path.join(dir, 'README.md'))).toBe(true);
+      expect(await has(path.join(dir, 'skills/other/SKILL.md'))).toBe(true);
+    });
+
+    it('пути с «./» и «..» нормализуются; выходящие за корень отбрасываются', async () => {
+      const root = await tmpDir();
+      const origin = await makeBigRepo(root);
+      const src = { id: 'big', type: 'git' as const, url: pathToFileURL(origin).href };
+      const opts = { layer: 'base' as const, manifestDir: root, cacheDir: path.join(root, '.cache'), update: false };
+      const dir = await ensureSource(src, { ...opts, sparse: ['./skills/demo', 'skills/x/../other', '../outside'] });
+      expect(await has(path.join(dir, 'skills/demo/SKILL.md'))).toBe(true);
+      expect(await has(path.join(dir, 'skills/other/SKILL.md'))).toBe(true);
+      expect(await has(path.join(dir, 'big/blob.txt'))).toBe(false);
+    });
   });
 });
 

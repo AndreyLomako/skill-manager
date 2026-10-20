@@ -1,6 +1,5 @@
 'use server';
 
-import { access, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { CatalogError, loadCatalog } from '@/core/catalog';
 import { getInstalled, installSkills } from '@/core/installer';
@@ -9,20 +8,8 @@ import { addManualProject, isKnownProject, listProjects, type ProjectsResult } f
 import { listInstalled } from '@/core/inventory';
 import { isForbiddenProjectRoot, skillRoots, skillsRoot, parseAgents } from '@/core/skill-targets';
 import { purgeTrash, removeSkill, restoreFromTrash } from '@/core/trash';
-import { ensureSource, sourceCacheDir } from '@/core/sources';
-import type {
-  AgentId,
-  Catalog,
-  InstallResult,
-  InstalledSkill,
-  InstalledState,
-  Scope,
-  SourceDef,
-  TrashEntry,
-} from '@/core/types';
-import { addUserSkill, type NewUserSkill } from '@/core/user-catalog';
-
-const exists = (p: string) => access(p).then(() => true, () => false);
+import type { AgentId, Catalog, InstallResult, InstalledSkill, InstalledState, Scope, TrashEntry } from '@/core/types';
+import { addUserSkill, verifyUserSkill, type NewUserSkill } from '@/core/user-catalog';
 
 export type CatalogResult = { ok: true; catalog: Catalog } | { ok: false; error: string };
 
@@ -162,30 +149,11 @@ export async function addUserSkillAction(
 ): Promise<{ ok: true; skillId: string; catalog: CatalogResult } | { ok: false; error: string }> {
   try {
     const paths = appPaths();
-    const { skillId } = await addUserSkill(paths.userDir, input, (src, skillPath) => verifyUserSkill(paths, src, skillPath));
+    const { skillId } = await addUserSkill(paths.userDir, input, (src, skillPath, manifest) =>
+      verifyUserSkill(paths, src, skillPath, manifest),
+    );
     return { ok: true, skillId, catalog: await getCatalogAction(false) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
-}
-
-async function verifyUserSkill(paths: AppPaths, src: SourceDef, skillPath: string): Promise<void> {
-  // Свежий клон, сделанный только ради проверки, удаляем при неудаче, чтобы его
-  // не подхватил другой источник с тем же id.
-  const cache = src.type === 'git' ? sourceCacheDir(paths.cacheDir, 'user', src.id) : null;
-  const hadCache = cache ? await exists(path.join(cache, '.git')) : true;
-  try {
-    const dir = await ensureSource(src, {
-      layer: 'user',
-      manifestDir: paths.userDir,
-      cacheDir: paths.cacheDir,
-      update: false,
-    });
-    if (!(await exists(path.join(dir, skillPath, 'SKILL.md')))) {
-      throw new Error(`SKILL.md не найден по пути «${skillPath}»`);
-    }
-  } catch (e) {
-    if (cache && !hadCache) await rm(cache, { recursive: true, force: true }).catch(() => {});
-    throw e;
   }
 }

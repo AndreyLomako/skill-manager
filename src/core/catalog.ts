@@ -3,7 +3,7 @@ import path from 'node:path';
 import { readFrontmatter } from './frontmatter';
 import { emptyManifest, parseManifest } from './manifest';
 import { BASE_MANIFEST, USER_MANIFEST, type AppPaths } from './paths';
-import { ensureSource, NotClonedError, runGit, type GitRunner } from './sources';
+import { ensureSource, normalizeRepoPath, NotClonedError, runGit, type GitRunner } from './sources';
 import { AGENTS } from './skill-targets';
 import type { AgentId, Catalog, CatalogPack, CatalogSkill, CategoryDef, Layer, Manifest, SkillDef, SourceDef } from './types';
 
@@ -39,10 +39,10 @@ function agentPaths(def: SkillDef): [AgentId, string][] {
   });
 }
 
-/** Пути git-источника для частичного клона; null — нужен весь репозиторий (скилл в корне). */
-function sparsePaths(manifest: Manifest, sourceId: string): string[] | undefined {
+/** Пути git-источника для частичного клона; undefined — нужен весь репозиторий (скилл в корне). */
+export function sparsePaths(manifest: Manifest, sourceId: string): string[] | undefined {
   const all = manifest.skills.filter((d) => d.source === sourceId).flatMap((d) => agentPaths(d).map(([, p]) => p));
-  return all.length > 0 && all.every((p) => p.replace(/[\\/.]/g, '') !== '') ? all : undefined;
+  return all.length > 0 && all.every((p) => normalizeRepoPath(p) !== '') ? all : undefined;
 }
 
 async function resolveLayer(

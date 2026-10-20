@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { sparsePaths } from './catalog';
 import { writeJsonAtomic } from './json-file';
 import { emptyManifest, parseManifest } from './manifest';
 import { USER_MANIFEST } from './paths';
+import { ensureSource, normalizeRepoPath, runGit, sourceCacheDir, type GitRunner } from './sources';
 import type { Manifest, SourceDef } from './types';
 
 export interface NewUserSkill {
@@ -37,7 +39,8 @@ async function readUserManifest(file: string): Promise<Manifest> {
   }
 }
 
-export type VerifySkill = (source: SourceDef, skillPath: string) => Promise<void>;
+/** manifest — уже с новым скиллом (и новым источником, если он создан). */
+export type VerifySkill = (source: SourceDef, skillPath: string, manifest: Manifest) => Promise<void>;
 
 export async function addUserSkill(
   userDir: string,
@@ -84,12 +87,51 @@ export async function addUserSkill(
   }
   const sourceId = source.id;
 
-  const skillPath = (input.skillPath ?? '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  const skillPath = normalizeRepoPath((input.skillPath ?? '').trim());
+  if (skillPath === null) throw new Error('Путь скилла выходит за пределы источника');
   const idBase = slugify(skillPath ? (skillPath.split('/').pop() ?? '') : sourceId) || 'skill';
   const skillId = uniqueId(idBase, new Set(manifest.skills.map((s) => s.id)));
   manifest.skills.push({ id: skillId, source: sourceId, path: skillPath, category });
 
-  if (verify) await verify(source, skillPath);
+  if (verify) await verify(source, skillPath, manifest);
   await writeJsonAtomic(file, manifest);
   return { skillId };
+}
+
+const exists = (p: string) => access(p).then(() => true, () => false);
+
+/**
+ * Проверка нового скилла: источник загружается (git — частично, с путями всех его скиллов
+ * из обновлённого манифеста, включая новый) и по пути есть SKILL.md.
+ */
+export async function verifyUserSkill(
+  dirs: { userDir: string; cacheDir: string },
+  src: SourceDef,
+  skillPath: string,
+  manifest: Manifest,
+  git: GitRunner = runGit,
+): Promise<void> {
+  // Свежий клон, сделанный только ради проверки, удаляем при неудаче, чтобы его
+  // не подхватил другой источник с тем же id.
+  const cache = src.type === 'git' ? sourceCacheDir(dirs.cacheDir, 'user', src.id) : null;
+  const hadCache = cache ? await exists(path.join(cache, '.git')) : true;
+  try {
+    const dir = await ensureSource(
+      src,
+      {
+        layer: 'user',
+        manifestDir: dirs.userDir,
+        cacheDir: dirs.cacheDir,
+        update: false,
+        sparse: src.type === 'git' ? sparsePaths(manifest, src.id) : undefined,
+      },
+      git,
+    );
+    if (!(await exists(path.join(dir, skillPath, 'SKILL.md')))) {
+      throw new Error(`SKILL.md не найден по пути «${skillPath}»`);
+    }
+  } catch (e) {
+    if (cache && !hadCache) await rm(cache, { recursive: true, force: true }).catch(() => {});
+    throw e;
+  }
 }

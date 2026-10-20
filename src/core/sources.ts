@@ -61,9 +61,16 @@ export class NotClonedError extends Error {}
 // Набор путей частичного клона, с которым синхронизировано рабочее дерево.
 const SPARSE_MARK = 'skill-manager-sparse.json';
 
+/** Путь внутри репозитория без «./», «..» и крайних «/»; null — выходит за корень. «» — сам корень. */
+export function normalizeRepoPath(p: string): string | null {
+  const norm = path.posix.normalize(p.replace(/\\/g, '/')).replace(/^\/+|\/+$/g, '');
+  if (norm === '..' || norm.startsWith('../')) return null;
+  return norm === '.' ? '' : norm;
+}
+
 function sparseSet(paths: string[] | undefined): string[] | null {
   if (!paths || paths.length === 0) return null;
-  const norm = paths.map((p) => p.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')).filter(Boolean);
+  const norm = paths.map(normalizeRepoPath).filter((p): p is string => Boolean(p));
   return norm.length > 0 ? [...new Set(norm)].sort() : null;
 }
 
@@ -123,12 +130,17 @@ async function ensureGitSource(
       }
     }
     // Набор путей поменялся (в каталоге новый скилл из этого источника) или клон был полным.
-    if (sparse && (await sparseMark(dir)) !== JSON.stringify(sparse)) {
-      try {
+    const mark = await sparseMark(dir);
+    try {
+      if (sparse && mark !== JSON.stringify(sparse)) {
         await applySparse(dir, sparse, git);
-      } catch (e) {
-        opts.onWarning?.((e as Error).message);
+      } else if (!sparse && mark !== null) {
+        // Теперь нужен весь репозиторий (скилл в корне) — частичный режим выключаем.
+        await git(['sparse-checkout', 'disable'], dir);
+        await rm(path.join(dir, '.git', SPARSE_MARK), { force: true });
       }
+    } catch (e) {
+      opts.onWarning?.((e as Error).message);
     }
     return dir;
   }
