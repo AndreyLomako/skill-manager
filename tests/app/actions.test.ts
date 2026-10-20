@@ -88,7 +88,8 @@ writeFileSync(file, JSON.stringify(data));
       'bin/fake.mjs': FAKE,
       ...(process.platform === 'win32'
         ? { 'bin/claude.cmd': '@node "%~dp0fake.mjs" %*\r\n' }
-        : { 'bin/claude': '#!/bin/sh\nexec node "$(dirname "$0")/fake.mjs" "$@"\n' }),
+        : // Без внешних команд (dirname и т. п.): в тесте PATH урезан до bin и папки node.
+          { 'bin/claude': '#!/bin/sh\nexec node "${0%/*}/fake.mjs" "$@"\n' }),
     });
     if (process.platform !== 'win32') await chmod(path.join(bin, 'claude'), 0o755);
     process.env.SKILL_MANAGER_HOME = home;
