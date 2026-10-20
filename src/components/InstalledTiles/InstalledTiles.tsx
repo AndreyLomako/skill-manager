@@ -17,6 +17,8 @@ interface Props {
   onRemove(item: InstalledSkill): void;
   onRemovePack(pack: CatalogPack, items: InstalledSkill[]): void;
   onRemovePlugin(group: InstalledGroup): void;
+  /** id плагина, который сейчас удаляется */
+  uninstallingPlugin?: string | null;
   onUpdate(item: InstalledSkill): void;
   onHover(): void;
 }
@@ -49,6 +51,7 @@ export function InstalledTiles({
   onRemove,
   onRemovePack,
   onRemovePlugin,
+  uninstallingPlugin = null,
   onUpdate,
   onHover,
 }: Props) {
@@ -149,6 +152,7 @@ export function InstalledTiles({
                 type="button"
                 className={styles.installed__groupToggle}
                 aria-expanded={expanded}
+                title={title}
                 onClick={() => toggle(g.key)}
                 onMouseEnter={onHover}
               >
@@ -164,12 +168,13 @@ export function InstalledTiles({
                   className={styles.installed__packRemove}
                   aria-label={`Удалить плагин ${g.title}`}
                   title="Удалить плагин целиком"
+                  disabled={uninstallingPlugin !== null}
                   onClick={() => onRemovePlugin(g)}
                 >
-                  <Icon name="trash" size={13} /> Удалить
+                  <Icon name="trash" size={13} /> {uninstallingPlugin === g.pluginId ? 'Удаляю…' : 'Удалить'}
                 </button>
               ) : (
-                <span className={styles.installed__lock} title="Только для просмотра">
+                <span className={styles.installed__lock} title="Только для просмотра" role="img" aria-label="Только для просмотра">
                   <Icon name="lock" size={13} />
                 </span>
               )}

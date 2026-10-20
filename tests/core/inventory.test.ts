@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import path from 'node:path';
-import { listInstalled } from '../../src/core/inventory';
+import { enabledPluginIds, listInstalled } from '../../src/core/inventory';
 import type { CatalogSkill } from '../../src/core/types';
 import { catalogSkill } from '../helpers/skill';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
@@ -52,6 +52,29 @@ describe('listInstalled', () => {
     ]);
     expect(res[0]).toMatchObject({ title: 'PDF', description: 'работа с PDF', agent: 'claude' });
     expect(res[2]).toMatchObject({ pluginId: 'superpowers@sp-market' });
+  });
+
+  it('enabledPluginIds: только включённые и установленные для пользователя (scope user)', async () => {
+    const root = await tmpDir();
+    const home = path.join(root, 'home');
+    await writeFiles(root, {
+      'home/.claude/plugins/installed_plugins.json': JSON.stringify({
+        version: 2,
+        plugins: {
+          'user@m': [{ scope: 'user', installPath: path.join(root, 'u') }],
+          'legacy@m': [{ installPath: path.join(root, 'l') }],
+          'proj@m': [{ scope: 'project', projectPath: path.join(root, 'p'), installPath: path.join(root, 'p') }],
+          'off@m': [{ scope: 'user', installPath: path.join(root, 'o') }],
+        },
+      }),
+      'home/.claude/settings.json': JSON.stringify({
+        enabledPlugins: { 'user@m': true, 'legacy@m': true, 'proj@m': true, 'off@m': false, 'ghost@m': true },
+      }),
+      'p/skills/proj-skill/SKILL.md': md('proj-skill'),
+    });
+    expect((await enabledPluginIds(home)).sort()).toEqual(['legacy@m', 'user@m']);
+    const res = await listInstalled({ kind: 'global' }, ['claude'], home, []);
+    expect(res.some((s) => s.name === 'proj-skill')).toBe(false);
   });
 
   it('глобально для Codex: свои и системные', async () => {

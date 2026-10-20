@@ -104,6 +104,8 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     scopeKey: string | null;
   } | null>(null);
   const [removingPlugin, setRemovingPlugin] = useState<{ group: InstalledGroup; scope: Scope; scopeKey: string | null } | null>(null);
+  // Плагин, который сейчас удаляет Claude Code (занимает до минуты)
+  const [uninstalling, setUninstalling] = useState<string | null>(null);
   const [noticeBusy, setNoticeBusy] = useState(false);
 
   const activePathRef = useRef(activePath);
@@ -395,6 +397,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     const pluginId = group.pluginId!;
     setRemovingPlugin(null);
     setBusy(true);
+    setUninstalling(pluginId);
     try {
       const res = await uninstallPluginAction(pluginId);
       if (res.ok) {
@@ -402,8 +405,8 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
         setNotice({
           tone: 'success',
           title: `Плагин «${group.title}» удалён`,
-          lines: [`Через Claude Code ${res.via === 'vscode' ? 'из расширения VS Code' : '(клиент)'}.`],
-          hint: `Открытые сессии Claude Code увидят изменение после перезапуска (в VS Code — «Developer: Reload Window»). Вернуть плагин: /plugin install ${pluginId}`,
+          lines: [`Через Claude Code ${res.via === 'vscode' ? 'из расширения редактора' : '(клиент)'}.`],
+          hint: `Открытые сессии Claude Code увидят изменение после перезапуска (в VS Code — «Developer: Reload Window»). Вернуть плагин вместе с его данными: /plugin install ${pluginId}`,
         });
       } else {
         pulse('error');
@@ -420,6 +423,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
       setNotice({ tone: 'error', title: 'Плагин не удалён', lines: [e instanceof Error ? e.message : String(e)] });
     } finally {
       setBusy(false);
+      setUninstalling(null);
     }
     await refreshAfterChange(targetScope, targetKey);
   };
@@ -563,7 +567,8 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
                 error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
                 onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
                 onRemovePack={(pack, items) => scope && setRemovingPack({ pack, items, scope, scopeKey })}
-                onRemovePlugin={(group) => scope && setRemovingPlugin({ group, scope, scopeKey })}
+                onRemovePlugin={(group) => scope && !uninstalling && setRemovingPlugin({ group, scope, scopeKey })}
+                uninstallingPlugin={uninstalling}
                 onUpdate={(item) => setUpdating({ id: item.name, agent: item.agent })}
                 onHover={hover}
               />
@@ -651,7 +656,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
       {removingPlugin && (
         <Dialog title="Удалить плагин?" onClose={() => setRemovingPlugin(null)}>
           <p className={styles.dialog__text}>
-            Плагин «{removingPlugin.group.title}» будет удалён из Claude Code целиком: скиллов — {removingPlugin.group.items.length}, а также его команды, агенты и хуки. Это делает сам Claude Code (клиент или расширение VS Code), в корзину приложения плагин не попадает — вернуть его можно командой /plugin install {removingPlugin.group.pluginId}.
+            Плагин «{removingPlugin.group.title}» будет удалён из Claude Code целиком: скиллов — {removingPlugin.group.items.length}, а также его команды, агенты и хуки. Это делает сам Claude Code (клиент или расширение редактора); данные плагина сохраняются. В корзину приложения плагин не попадает — вернуть его можно командой /plugin install {removingPlugin.group.pluginId}.
           </p>
           <div className={styles.dialog__actions}>
             <Tile title="Удалить плагин" marker={<Icon name="trash" />} tone="warning" disabled={busy} onClick={() => void confirmRemovePlugin()} />

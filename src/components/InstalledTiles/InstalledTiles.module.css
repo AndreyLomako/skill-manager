@@ -124,6 +124,7 @@
   font-size: 13px;
   color: var(--color-text-dim);
 }
+.installed__packRemove:disabled { opacity: 0.55; cursor: default; pointer-events: none; }
 .installed__packRemove:hover {
   color: var(--color-text);
   background: rgba(255, 107, 138, 0.25);

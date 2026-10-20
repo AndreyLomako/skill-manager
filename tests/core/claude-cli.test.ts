@@ -47,6 +47,27 @@ describe('findClaudeCli', () => {
     expect(await findClaudeCli({ env: { PATH: root }, home: root, platform })).toBeNull();
   });
 
+  it('Windows: claude.exe где угодно важнее claude.cmd в PATH; кавычки и относительные пути в PATH', async () => {
+    const root = await tmpDir();
+    await writeFiles(root, {
+      'npm/claude.cmd': '',
+      [`home/.vscode/extensions/${extDir('2.1.304')}/resources/native-binary/claude.exe`]: '',
+    });
+    const cli = await findClaudeCli({
+      env: { Path: `relative\\dir;"${path.join(root, 'npm')}"` },
+      home: path.join(root, 'home'),
+      platform: 'win32',
+    });
+    expect(cli?.path).toBe(path.join(root, 'home', '.vscode', 'extensions', extDir('2.1.304'), 'resources', 'native-binary', 'claude.exe'));
+  });
+
+  it('macOS/Linux: старая локальная установка ~/.claude/local', async () => {
+    const root = await tmpDir();
+    await writeFiles(root, { 'home/.claude/local/claude': '' });
+    const cli = await findClaudeCli({ env: { PATH: '' }, home: path.join(root, 'home'), platform: 'darwin' });
+    expect(cli).toEqual({ path: path.join(root, 'home', '.claude', 'local', 'claude'), source: 'cli' });
+  });
+
   it('Windows: claude.cmd из npm тоже подходит', async () => {
     const root = await tmpDir();
     await writeFiles(root, { 'npm/claude.cmd': '' });
@@ -68,12 +89,26 @@ describe('uninstallPlugin', () => {
     expect(called).toBe(false);
   });
 
-  it('вызывает claude plugin uninstall <id> --scope user', async () => {
+  it('вызывает claude plugin uninstall <id> --scope user --keep-data (данные плагина сохраняются)', async () => {
     const calls: [string, string[]][] = [];
     await uninstallPlugin('superpowers@superpowers-marketplace', cli, async (file, args) => {
       calls.push([file, args]);
     });
-    expect(calls).toEqual([['/x/claude', ['plugin', 'uninstall', 'superpowers@superpowers-marketplace', '--scope', 'user']]]);
+    expect(calls).toEqual([
+      ['/x/claude', ['plugin', 'uninstall', 'superpowers@superpowers-marketplace', '--scope', 'user', '--keep-data']],
+    ]);
+  });
+
+  it('старый Claude Code без --keep-data — повтор без флага', async () => {
+    const calls: string[][] = [];
+    await uninstallPlugin('sp@m', cli, async (_file, args) => {
+      calls.push(args);
+      if (args.includes('--keep-data')) throw new Error("error: unknown option '--keep-data'");
+    });
+    expect(calls).toEqual([
+      ['plugin', 'uninstall', 'sp@m', '--scope', 'user', '--keep-data'],
+      ['plugin', 'uninstall', 'sp@m', '--scope', 'user'],
+    ]);
   });
 
   it('ошибка Claude Code пробрасывается с текстом', async () => {

@@ -51,15 +51,25 @@ async function readJson(file: string): Promise<any> {
   }
 }
 
-type PluginRecords = Array<{ installPath?: unknown }>;
+type PluginRecords = Array<{ installPath?: unknown; scope?: unknown }>;
 
-/** Установленные плагины Claude Code, включённые в ~/.claude/settings.json: id «имя@магазин» → записи установки. */
+/**
+ * Плагины Claude Code, установленные для пользователя (scope user или без scope — старый формат)
+ * и включённые в ~/.claude/settings.json: id «имя@магазин» → записи установки.
+ * Установки уровня проекта (scope project/local) в глобальный список не входят.
+ */
 async function userPlugins(home: string): Promise<[string, PluginRecords][]> {
   const installed = await readJson(path.join(home, '.claude', 'plugins', 'installed_plugins.json'));
   const settings = await readJson(path.join(home, '.claude', 'settings.json'));
   const enabled: Record<string, unknown> = settings?.enabledPlugins ?? {};
-  const plugins: Record<string, PluginRecords> = installed?.plugins ?? {};
-  return Object.entries(plugins).filter(([key, records]) => enabled[key] === true && Array.isArray(records));
+  const plugins: Record<string, unknown> = installed?.plugins ?? {};
+  const out: [string, PluginRecords][] = [];
+  for (const [key, records] of Object.entries(plugins)) {
+    if (enabled[key] !== true || !Array.isArray(records)) continue;
+    const user = (records as PluginRecords).filter((r) => r?.scope === undefined || r.scope === 'user');
+    if (user.length > 0) out.push([key, user]);
+  }
+  return out;
 }
 
 export async function enabledPluginIds(home: string): Promise<string[]> {

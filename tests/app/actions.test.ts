@@ -108,7 +108,7 @@ writeFileSync(file, JSON.stringify(data));
     process.env.PATH = [bin, path.dirname(process.execPath)].join(path.delimiter);
     expect(await uninstallPluginAction('sp@market')).toEqual({ ok: true, via: 'cli' });
     expect(await readFile(path.join(home, 'calls.txt'), 'utf8')).toBe(
-      JSON.stringify(['plugin', 'uninstall', 'sp@market', '--scope', 'user']) + '\n',
+      JSON.stringify(['plugin', 'uninstall', 'sp@market', '--scope', 'user', '--keep-data']) + '\n',
     );
   });
 
