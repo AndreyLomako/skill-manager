@@ -89,6 +89,7 @@ export async function addUserSkill(
 
   const skillPath = normalizeRepoPath((input.skillPath ?? '').trim());
   if (skillPath === null) throw new Error('Путь скилла выходит за пределы источника');
+  if (/^[a-zA-Z]:/.test(skillPath)) throw new Error('Укажите путь к скиллу относительно источника');
   const idBase = slugify(skillPath ? (skillPath.split('/').pop() ?? '') : sourceId) || 'skill';
   const skillId = uniqueId(idBase, new Set(manifest.skills.map((s) => s.id)));
   manifest.skills.push({ id: skillId, source: sourceId, path: skillPath, category });
@@ -115,6 +116,8 @@ export async function verifyUserSkill(
   // не подхватил другой источник с тем же id.
   const cache = src.type === 'git' ? sourceCacheDir(dirs.cacheDir, 'user', src.id) : null;
   const hadCache = cache ? await exists(path.join(cache, '.git')) : true;
+  // Докачка нового пути в частичный клон идёт по сети; её сбой — не «нет такого пути».
+  const warnings: string[] = [];
   try {
     const dir = await ensureSource(
       src,
@@ -124,10 +127,12 @@ export async function verifyUserSkill(
         cacheDir: dirs.cacheDir,
         update: false,
         sparse: src.type === 'git' ? sparsePaths(manifest, src.id) : undefined,
+        onWarning: (msg) => warnings.push(msg),
       },
       git,
     );
     if (!(await exists(path.join(dir, skillPath, 'SKILL.md')))) {
+      if (warnings.length > 0) throw new Error(`Не удалось загрузить «${skillPath}»: ${warnings.join('; ')}`);
       throw new Error(`SKILL.md не найден по пути «${skillPath}»`);
     }
   } catch (e) {

@@ -3,7 +3,7 @@ import { access, readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseManifest } from '../../src/core/manifest';
-import { runGit, sourceCacheDir } from '../../src/core/sources';
+import { runGit, sourceCacheDir, type GitRunner } from '../../src/core/sources';
 import { addUserSkill, slugify, verifyUserSkill, type NewUserSkill } from '../../src/core/user-catalog';
 import type { SourceDef } from '../../src/core/types';
 import { cleanupTmp, tmpDir, writeFiles } from '../helpers/tmp';
@@ -111,6 +111,7 @@ describe('addUserSkill', () => {
     await addUserSkill(userDir, { ...base, skillPath: './skills/a/' });
     expect((await read(userDir)).skills[0].path).toBe('skills/a');
     await expect(addUserSkill(userDir, { ...base, skillPath: '../x' })).rejects.toThrow(/за пределы/);
+    await expect(addUserSkill(userDir, { ...base, skillPath: 'C:\\repo\\skills\\a' })).rejects.toThrow(/относительно/);
   });
 });
 
@@ -152,6 +153,22 @@ describe('verifyUserSkill (настоящий git)', () => {
     await add('skills/a');
     await expect(add('skills/b')).resolves.toEqual({ skillId: 'b' });
     expect((await read(dirs.userDir)).skills.map((s) => s.id)).toEqual(['a', 'b']);
+    const cache = sourceCacheDir(dirs.cacheDir, 'user', (await read(dirs.userDir)).sources[0].id);
+    expect(await has(path.join(cache, 'big/blob.txt'))).toBe(false);
+  });
+
+  it('сбой докачки нового пути — ошибка загрузки, а не «SKILL.md не найден»', async () => {
+    const { dirs, add } = await setup();
+    await add('skills/a');
+    const m = await read(dirs.userDir);
+    m.skills.push({ id: 'b', source: m.sources[0].id, path: 'skills/b', category: 'g' });
+    const offline: GitRunner = async (args, cwd) => {
+      if (args[0] === 'sparse-checkout') throw new Error('unable to access remote');
+      return runGit(args, cwd);
+    };
+    await expect(verifyUserSkill(dirs, m.sources[0], 'skills/b', m, offline)).rejects.toThrow(
+      /Не удалось загрузить «skills\/b»: unable to access remote/,
+    );
   });
 
   it('несуществующий путь — ошибка, файл каталога не меняется', async () => {

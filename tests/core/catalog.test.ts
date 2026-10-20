@@ -342,6 +342,21 @@ describe('loadCatalog: каталог v2', () => {
     const noop = async () => {};
     expect((await loadCatalog(paths, {}, noop)).skills[0].sourceLabel).toBe('https://github.com/o/r');
   });
+
+  it('git-источник без скиллов не загружается и не трогается', async () => {
+    const { paths } = await setup(
+      v2({ sources: [{ id: 'unused', type: 'git', url: 'https://example.invalid/u.git' }] }),
+      undefined,
+      { '.cache/base-unused/.git/HEAD': 'ref: refs/heads/main', '.cache/base-unused/.git/skill-manager-sparse.json': '["x"]' },
+    );
+    const calls: string[][] = [];
+    const git = async (args: string[]) => {
+      calls.push(args);
+    };
+    const c = await loadCatalog(paths, { update: true }, git);
+    expect(calls).toEqual([]);
+    expect(c.errors).toEqual([]);
+  });
 });
 
 describe('loadCatalog: без клонирования (первая отрисовка)', () => {

@@ -58,6 +58,8 @@ async function resolveLayer(
   const sourceDirs = new Map<string, string | null>();
   const pending = new Set<string>();
   for (const src of manifest.sources) {
+    // Источник без скиллов не нужен: не клонируем и не меняем его клон (иначе «нет путей» = весь репозиторий).
+    if (!manifest.skills.some((d) => d.source === src.id)) continue;
     try {
       const onWarning = (msg: string) => {
         const text = `Источник «${src.id}» (${LAYER_LABEL[layer]}): не удалось обновить — ${msg}`;
