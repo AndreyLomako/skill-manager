@@ -24,6 +24,8 @@
   color: var(--color-text-dim);
 }
 .installed__item { position: relative; }
+/* Плитка — кнопка, она сжимается по тексту; растягиваем на всю ячейку сетки */
+.installed__item > :first-child { width: 100%; height: 100%; }
 .installed__remove {
   position: absolute;
   top: -6px;

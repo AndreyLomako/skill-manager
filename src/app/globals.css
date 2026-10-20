@@ -26,6 +26,8 @@ html, body { height: 100%; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { background: none; border: none; cursor: pointer; }
 ul { list-style: none; }
+/* Полосы прокрутки в тон стеклу, а не системные светлые */
+* { scrollbar-color: rgba(238, 240, 255, 0.22) transparent; }
 
 /* ===== ГЛОБАЛЬНЫЕ СТИЛИ ===== */
 body {
