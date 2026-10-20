@@ -1,15 +1,11 @@
 'use client';
 
-import { AGENT_LABEL, installedLabel } from '@/core/selection';
+import { useState } from 'react';
+import { AGENT_LABEL, installedLabel, type InstalledGroup } from '@/core/selection';
 import type { CatalogPack, CatalogSkill, InstalledSkill } from '@/core/types';
 import { Icon } from '../Icon/Icon';
 import { Tile, type TileProps } from '../Tile/Tile';
 import styles from './InstalledTiles.module.css';
-
-export interface InstalledGroup {
-  pack: CatalogPack | null;
-  items: InstalledSkill[];
-}
 
 interface Props {
   groups: InstalledGroup[];
@@ -20,22 +16,17 @@ interface Props {
   error?: string;
   onRemove(item: InstalledSkill): void;
   onRemovePack(pack: CatalogPack, items: InstalledSkill[]): void;
+  onRemovePlugin(group: InstalledGroup): void;
   onUpdate(item: InstalledSkill): void;
   onHover(): void;
 }
 
-function subtitle(item: InstalledSkill, description: string): string {
-  switch (item.kind) {
-    case 'managed':
-      return description;
-    case 'synced':
-      return 'синхронизировано с claude.ai';
-    case 'plugin':
-      return `плагин ${item.plugin ?? ''} — управляется через /plugin`;
-    case 'system':
-      return 'системный скилл Codex';
-  }
-}
+// Чем управляет не приложение — подпись группы под заголовком.
+const GROUP_HINT: Partial<Record<InstalledGroup['kind'], string>> = {
+  plugin: 'плагин Claude Code',
+  synced: 'синхронизируются с вашего аккаунта claude.ai',
+  system: 'идут с Codex',
+};
 
 function tileState(item: InstalledSkill): Pick<TileProps, 'marker' | 'tone' | 'disabled'> {
   if (item.kind !== 'managed') return { marker: <Icon name="lock" size={14} />, disabled: true };
@@ -49,7 +40,27 @@ function shortRoot(root: string): string {
   return root.split(/[\\/]+/).filter(Boolean).slice(-2).join('/');
 }
 
-export function InstalledTiles({ groups, skills, showAgent, loading, error, onRemove, onRemovePack, onUpdate, onHover }: Props) {
+export function InstalledTiles({
+  groups,
+  skills,
+  showAgent,
+  loading,
+  error,
+  onRemove,
+  onRemovePack,
+  onRemovePlugin,
+  onUpdate,
+  onHover,
+}: Props) {
+  // Раскрытые служебные группы (плагины, claude.ai, системные) — по умолчанию свёрнуты.
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (key: string) =>
+    setOpen((s) => {
+      const next = new Set(s);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
   if (groups.length === 0) {
     return (
       <div className={styles.installed}>
@@ -68,7 +79,7 @@ export function InstalledTiles({ groups, skills, showAgent, loading, error, onRe
     const parts = [
       showAgent ? AGENT_LABEL[item.agent] : null,
       (seen.get(`${item.agent}:${item.name}`) ?? 0) > 1 ? shortRoot(item.root) : null,
-      subtitle(item, label.description),
+      label.description,
     ].filter(Boolean);
     return (
       <div key={`${item.agent}:${item.kind}:${item.dir}`} className={styles.installed__item}>
@@ -94,33 +105,84 @@ export function InstalledTiles({ groups, skills, showAgent, loading, error, onRe
     );
   };
 
+  const hasOwn = groups.some((g) => g.kind === 'loose' || g.kind === 'pack');
+
   return (
     <div className={styles.installed}>
-      {groups.map((g) =>
-        g.pack ? (
-          <section key={g.pack.id} className={styles.installed__pack}>
+      {!hasOwn && <p className={styles.installed__note}>Своих скиллов здесь пока нет. Ниже — установленные другими программами.</p>}
+      {groups.map((g) => {
+        if (g.kind === 'loose') {
+          return (
+            <div key={g.key} className={styles.installed__grid}>
+              {g.items.map(tile)}
+            </div>
+          );
+        }
+        if (g.kind === 'pack' && g.pack) {
+          const pack = g.pack;
+          return (
+            <section key={g.key} className={styles.installed__pack}>
+              <header className={styles.installed__packHead}>
+                <span className={styles.installed__packTitle} title={pack.title}>
+                  <span className={styles.installed__packName}>{pack.title}</span>
+                  <span className={styles.installed__packCount}>{g.items.length}</span>
+                </span>
+                <button
+                  type="button"
+                  className={styles.installed__packRemove}
+                  aria-label={`Удалить весь пак ${pack.title}`}
+                  onClick={() => onRemovePack(pack, g.items)}
+                >
+                  <Icon name="trash" size={13} /> Весь пак
+                </button>
+              </header>
+              <div className={styles.installed__grid}>{g.items.map(tile)}</div>
+            </section>
+          );
+        }
+        const expanded = open.has(g.key);
+        const title = g.kind === 'plugin' ? `Плагин ${g.title}` : g.title;
+        return (
+          <section key={g.key} className={`${styles.installed__pack} ${styles.installed__foreign}`} data-group={g.key}>
             <header className={styles.installed__packHead}>
-              <span className={styles.installed__packTitle} title={g.pack.title}>
-                <span className={styles.installed__packName}>{g.pack.title}</span>
-                <span className={styles.installed__packCount}>{g.items.length}</span>
-              </span>
               <button
                 type="button"
-                className={styles.installed__packRemove}
-                aria-label={`Удалить весь пак ${g.pack.title}`}
-                onClick={() => onRemovePack(g.pack!, g.items)}
+                className={styles.installed__groupToggle}
+                aria-expanded={expanded}
+                onClick={() => toggle(g.key)}
+                onMouseEnter={onHover}
               >
-                <Icon name="trash" size={13} /> Весь пак
+                <span className={`${styles.installed__chevron} ${expanded ? styles['installed__chevron--open'] : ''}`} aria-hidden>
+                  ▸
+                </span>
+                <span className={styles.installed__packName}>{title}</span>
+                <span className={styles.installed__packCount}>{g.items.length}</span>
               </button>
+              {g.kind === 'plugin' && g.pluginId ? (
+                <button
+                  type="button"
+                  className={styles.installed__packRemove}
+                  aria-label={`Удалить плагин ${g.title}`}
+                  title="Удалить плагин целиком"
+                  onClick={() => onRemovePlugin(g)}
+                >
+                  <Icon name="trash" size={13} /> Удалить
+                </button>
+              ) : (
+                <span className={styles.installed__lock} title="Только для просмотра">
+                  <Icon name="lock" size={13} />
+                </span>
+              )}
             </header>
-            <div className={styles.installed__grid}>{g.items.map(tile)}</div>
+            {expanded && (
+              <>
+                <p className={styles.installed__groupHint}>{GROUP_HINT[g.kind]}</p>
+                <div className={styles.installed__grid}>{g.items.map(tile)}</div>
+              </>
+            )}
           </section>
-        ) : (
-          <div key="loose" className={styles.installed__grid}>
-            {g.items.map(tile)}
-          </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }

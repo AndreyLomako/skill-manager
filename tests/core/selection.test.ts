@@ -163,15 +163,34 @@ describe('selection: подкатегории и паки', () => {
     expect(togglePack(['p1'], pack, sk, {})).toEqual(['p1', 'p2']);
   });
 
-  it('groupInstalled: сначала без пака, затем группы паков с найденными скиллами', () => {
-    const item = (name: string, kind: InstalledSkill['kind'] = 'managed') =>
-      ({ name, title: name, description: '', agent: 'claude', kind, dir: name, root: 'r' }) as InstalledSkill;
-    const groups = groupInstalled([item('p2'), item('imp'), item('p1'), item('p1', 'plugin')], sk, [pack]);
-    expect(groups.map((g) => [g.pack?.id ?? null, g.items.map((i) => `${i.kind}:${i.name}`)])).toEqual([
-      [null, ['managed:imp', 'plugin:p1']],
-      ['pk', ['managed:p2', 'managed:p1']],
+  it('groupInstalled: свои, паки, плагины по одному, claude.ai, системные Codex', () => {
+    const item = (name: string, kind: InstalledSkill['kind'] = 'managed', extra: Partial<InstalledSkill> = {}) =>
+      ({ name, title: name, description: '', agent: 'claude', kind, dir: name, root: 'r', ...extra }) as InstalledSkill;
+    const sp = { plugin: 'superpowers', pluginId: 'superpowers@sp-m' };
+    const groups = groupInstalled(
+      [
+        item('p2'),
+        item('imp'),
+        item('p1'),
+        item('tdd', 'plugin', sp),
+        item('beads', 'plugin', { plugin: 'beads', pluginId: 'beads@b' }),
+        item('brainstorming', 'plugin', sp),
+        item('pdf', 'synced'),
+        item('imagegen', 'system', { agent: 'codex' }),
+      ],
+      sk,
+      [pack],
+    );
+    expect(groups.map((g) => [g.kind, g.key, g.title, g.items.map((i) => i.name)])).toEqual([
+      ['loose', 'loose', '', ['imp']],
+      ['pack', 'pack:pk', pack.title, ['p2', 'p1']],
+      ['plugin', 'plugin:beads@b', 'beads', ['beads']],
+      ['plugin', 'plugin:superpowers@sp-m', 'superpowers', ['tdd', 'brainstorming']],
+      ['synced', 'synced', 'claude.ai', ['pdf']],
+      ['system', 'system', 'Системные Codex', ['imagegen']],
     ]);
-    expect(groupInstalled([item('imp')], sk, [pack]).map((g) => g.pack?.id ?? null)).toEqual([null]);
+    expect(groups.find((g) => g.kind === 'plugin')?.pluginId).toBe('beads@b');
+    expect(groupInstalled([item('imp')], sk, [pack]).map((g) => g.kind)).toEqual(['loose']);
   });
 });
 

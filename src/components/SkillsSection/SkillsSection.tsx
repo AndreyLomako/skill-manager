@@ -10,6 +10,7 @@ import {
   listInstalledAction,
   removeSkillAction,
   restoreSkillAction,
+  uninstallPluginAction,
 } from '@/app/actions';
 import type { ProjectsResult } from '@/core/projects';
 import {
@@ -31,6 +32,7 @@ import {
   togglePack,
   topCategories,
   type AgentChoice,
+  type InstalledGroup,
 } from '@/core/selection';
 import type {
   AgentId,
@@ -101,6 +103,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     scope: Scope;
     scopeKey: string | null;
   } | null>(null);
+  const [removingPlugin, setRemovingPlugin] = useState<{ group: InstalledGroup; scope: Scope; scopeKey: string | null } | null>(null);
   const [noticeBusy, setNoticeBusy] = useState(false);
 
   const activePathRef = useRef(activePath);
@@ -227,6 +230,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     setUpdating(null);
     setRemoving(null);
     setRemovingPack(null);
+    setRemovingPlugin(null);
   }, [scopeKey, agentChoice]);
 
   // Список «Установлено»: при входе в категорию и смене проекта/агента
@@ -385,6 +389,41 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
     await refreshAfterChange(targetScope, targetKey);
   };
 
+  const confirmRemovePlugin = async () => {
+    if (!removingPlugin?.group.pluginId) return;
+    const { group, scope: targetScope, scopeKey: targetKey } = removingPlugin;
+    const pluginId = group.pluginId!;
+    setRemovingPlugin(null);
+    setBusy(true);
+    try {
+      const res = await uninstallPluginAction(pluginId);
+      if (res.ok) {
+        pulse('success');
+        setNotice({
+          tone: 'success',
+          title: `Плагин «${group.title}» удалён`,
+          lines: [`Через Claude Code ${res.via === 'vscode' ? 'из расширения VS Code' : '(клиент)'}.`],
+          hint: `Открытые сессии Claude Code увидят изменение после перезапуска (в VS Code — «Developer: Reload Window»). Вернуть плагин: /plugin install ${pluginId}`,
+        });
+      } else {
+        pulse('error');
+        const command = res.command;
+        setNotice({
+          tone: 'error',
+          title: 'Плагин не удалён',
+          lines: command ? [res.error, `Удалите его в Claude Code командой: ${command}`] : [res.error],
+          action: command ? { label: 'Скопировать команду', onClick: () => void navigator.clipboard?.writeText(command) } : undefined,
+        });
+      }
+    } catch (e) {
+      pulse('error');
+      setNotice({ tone: 'error', title: 'Плагин не удалён', lines: [e instanceof Error ? e.message : String(e)] });
+    } finally {
+      setBusy(false);
+    }
+    await refreshAfterChange(targetScope, targetKey);
+  };
+
   const restoreAll = async (entries: TrashEntry[], title: string, targetScope: Scope, targetKey: string | null) => {
     setNoticeBusy(true);
     const failed: string[] = [];
@@ -524,6 +563,7 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
                 error={listError ? `Не удалось загрузить список: ${listError}` : undefined}
                 onRemove={(item) => scope && setRemoving({ item, scope, scopeKey })}
                 onRemovePack={(pack, items) => scope && setRemovingPack({ pack, items, scope, scopeKey })}
+                onRemovePlugin={(group) => scope && setRemovingPlugin({ group, scope, scopeKey })}
                 onUpdate={(item) => setUpdating({ id: item.name, agent: item.agent })}
                 onHover={hover}
               />
@@ -604,6 +644,18 @@ export function SkillsSection({ initialCatalog, initialProjects }: { initialCata
           <div className={styles.dialog__actions}>
             <Tile title="Удалить пак" marker={<Icon name="trash" />} tone="warning" onClick={() => void confirmRemovePack()} />
             <Tile title="Отмена" onClick={() => setRemovingPack(null)} />
+          </div>
+        </Dialog>
+      )}
+
+      {removingPlugin && (
+        <Dialog title="Удалить плагин?" onClose={() => setRemovingPlugin(null)}>
+          <p className={styles.dialog__text}>
+            Плагин «{removingPlugin.group.title}» будет удалён из Claude Code целиком: скиллов — {removingPlugin.group.items.length}, а также его команды, агенты и хуки. Это делает сам Claude Code (клиент или расширение VS Code), в корзину приложения плагин не попадает — вернуть его можно командой /plugin install {removingPlugin.group.pluginId}.
+          </p>
+          <div className={styles.dialog__actions}>
+            <Tile title="Удалить плагин" marker={<Icon name="trash" />} tone="warning" disabled={busy} onClick={() => void confirmRemovePlugin()} />
+            <Tile title="Отмена" onClick={() => setRemovingPlugin(null)} />
           </div>
         </Dialog>
       )}

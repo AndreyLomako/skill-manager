@@ -5,7 +5,8 @@ import { CatalogError, loadCatalog } from '@/core/catalog';
 import { getInstalled, installSkills } from '@/core/installer';
 import { resolveAppPaths, type AppPaths } from '@/core/paths';
 import { addManualProject, isKnownProject, listProjects, type ProjectsResult } from '@/core/projects';
-import { listInstalled } from '@/core/inventory';
+import { enabledPluginIds, listInstalled } from '@/core/inventory';
+import { findClaudeCli, isPluginId, pluginUninstallCommand, uninstallPlugin, type ClaudeCli } from '@/core/claude-cli';
 import { isForbiddenProjectRoot, skillRoots, skillsRoot, parseAgents } from '@/core/skill-targets';
 import { purgeTrash, removeSkill, restoreFromTrash } from '@/core/trash';
 import type { AgentId, Catalog, InstallResult, InstalledSkill, InstalledState, Scope, TrashEntry } from '@/core/types';
@@ -144,6 +145,30 @@ export async function restoreSkillAction(
     return { ok: true, entry };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export type UninstallPluginResult =
+  | { ok: true; via: ClaudeCli['source'] }
+  | { ok: false; error: string; command?: string };
+
+/** Удаляет установленный и включённый плагин Claude Code целиком — через найденный Claude Code (клиент или VS Code). */
+export async function uninstallPluginAction(pluginId: string): Promise<UninstallPluginResult> {
+  if (typeof pluginId !== 'string' || !isPluginId(pluginId)) return { ok: false, error: 'Некорректный id плагина' };
+  const paths = appPaths();
+  if (!(await enabledPluginIds(paths.home)).includes(pluginId)) {
+    return { ok: false, error: `Плагин ${pluginId} не установлен` };
+  }
+  const command = pluginUninstallCommand(pluginId);
+  const cli = await findClaudeCli({ env: process.env, home: paths.home, platform: process.platform });
+  if (!cli) {
+    return { ok: false, error: 'Claude Code не найден — ни клиент, ни расширение VS Code.', command };
+  }
+  try {
+    await uninstallPlugin(pluginId, cli);
+    return { ok: true, via: cli.source };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e), command };
   }
 }
 

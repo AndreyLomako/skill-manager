@@ -122,7 +122,10 @@ export interface InstalledSkill {
   /** Папка, в которой найден скилл (для удаления из нужного корня) */
   root: string;
   status?: InstalledStatus;
+  /** Имя плагина Claude Code (kind = 'plugin') */
   plugin?: string;
+  /** Полный id плагина «имя@магазин» — для удаления плагина целиком */
+  pluginId?: string;
 }
 
 export interface TrashEntry {

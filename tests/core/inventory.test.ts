@@ -51,6 +51,7 @@ describe('listInstalled', () => {
       ['plugin', 'brainstorming', null, 'superpowers'],
     ]);
     expect(res[0]).toMatchObject({ title: 'PDF', description: 'работа с PDF', agent: 'claude' });
+    expect(res[2]).toMatchObject({ pluginId: 'superpowers@sp-market' });
   });
 
   it('глобально для Codex: свои и системные', async () => {

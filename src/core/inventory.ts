@@ -51,19 +51,29 @@ async function readJson(file: string): Promise<any> {
   }
 }
 
-async function pluginSkills(home: string, platform: Platform): Promise<InstalledSkill[]> {
+type PluginRecords = Array<{ installPath?: unknown }>;
+
+/** Установленные плагины Claude Code, включённые в ~/.claude/settings.json: id «имя@магазин» → записи установки. */
+async function userPlugins(home: string): Promise<[string, PluginRecords][]> {
   const installed = await readJson(path.join(home, '.claude', 'plugins', 'installed_plugins.json'));
   const settings = await readJson(path.join(home, '.claude', 'settings.json'));
   const enabled: Record<string, unknown> = settings?.enabledPlugins ?? {};
-  const plugins: Record<string, Array<{ installPath?: unknown }>> = installed?.plugins ?? {};
+  const plugins: Record<string, PluginRecords> = installed?.plugins ?? {};
+  return Object.entries(plugins).filter(([key, records]) => enabled[key] === true && Array.isArray(records));
+}
+
+export async function enabledPluginIds(home: string): Promise<string[]> {
+  return (await userPlugins(home)).map(([key]) => key);
+}
+
+async function pluginSkills(home: string, platform: Platform): Promise<InstalledSkill[]> {
   const out: InstalledSkill[] = [];
   const seen = new Set<string>();
-  for (const [key, records] of Object.entries(plugins)) {
-    if (enabled[key] !== true || !Array.isArray(records)) continue;
+  for (const [key, records] of await userPlugins(home)) {
     const plugin = key.split('@')[0];
     for (const r of records) {
       if (typeof r?.installPath !== 'string') continue;
-      for (const s of await collect(path.join(r.installPath, 'skills'), 'claude', 'plugin', { plugin })) {
+      for (const s of await collect(path.join(r.installPath, 'skills'), 'claude', 'plugin', { plugin, pluginId: key })) {
         const key = pathKey(s.dir, platform);
         if (seen.has(key)) continue;
         seen.add(key);

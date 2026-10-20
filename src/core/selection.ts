@@ -143,25 +143,55 @@ export function togglePack(
 }
 
 /** «Установлено»: сначала скиллы без пака, затем группы каталожных паков (только найденные). */
+export interface InstalledGroup {
+  /** loose — свои скиллы без группы; остальные — под заголовком */
+  kind: 'loose' | 'pack' | 'plugin' | 'synced' | 'system';
+  key: string;
+  title: string;
+  items: InstalledSkill[];
+  pack?: CatalogPack;
+  /** «имя@магазин» — для удаления плагина целиком */
+  pluginId?: string;
+}
+
+/**
+ * «Установлено» по группам: свои скиллы, паки каталога, каждый плагин Claude Code отдельно,
+ * синхронизированные с claude.ai, системные Codex.
+ */
 export function groupInstalled(
   items: readonly InstalledSkill[],
   skills: readonly CatalogSkill[],
   packs: readonly CatalogPack[],
-): Array<{ pack: CatalogPack | null; items: InstalledSkill[] }> {
+): InstalledGroup[] {
   const packOf = new Map(skills.flatMap((s) => (s.pack ? [[s.id, s.pack] as const] : [])));
   const loose: InstalledSkill[] = [];
   const byPack = new Map<string, InstalledSkill[]>();
+  const plugins = new Map<string, InstalledGroup>();
+  const synced: InstalledSkill[] = [];
+  const system: InstalledSkill[] = [];
   for (const item of items) {
-    const pack = item.kind === 'managed' ? packOf.get(item.name) : undefined;
-    if (pack) byPack.set(pack, [...(byPack.get(pack) ?? []), item]);
-    else loose.push(item);
+    if (item.kind === 'synced') synced.push(item);
+    else if (item.kind === 'system') system.push(item);
+    else if (item.kind === 'plugin') {
+      const id = item.pluginId ?? item.plugin ?? item.name;
+      const g = plugins.get(id) ?? { kind: 'plugin', key: `plugin:${id}`, title: item.plugin ?? id, items: [], pluginId: item.pluginId };
+      g.items.push(item);
+      plugins.set(id, g);
+    } else {
+      const pack = packOf.get(item.name);
+      if (pack) byPack.set(pack, [...(byPack.get(pack) ?? []), item]);
+      else loose.push(item);
+    }
   }
-  const groups: Array<{ pack: CatalogPack | null; items: InstalledSkill[] }> = [];
-  if (loose.length > 0) groups.push({ pack: null, items: loose });
+  const groups: InstalledGroup[] = [];
+  if (loose.length > 0) groups.push({ kind: 'loose', key: 'loose', title: '', items: loose });
   for (const p of packs) {
     const found = byPack.get(p.id);
-    if (found) groups.push({ pack: p, items: found });
+    if (found) groups.push({ kind: 'pack', key: `pack:${p.id}`, title: p.title, items: found, pack: p });
   }
+  groups.push(...[...plugins.values()].sort((a, b) => a.title.localeCompare(b.title, 'ru')));
+  if (synced.length > 0) groups.push({ kind: 'synced', key: 'synced', title: 'claude.ai', items: synced });
+  if (system.length > 0) groups.push({ kind: 'system', key: 'system', title: 'Системные Codex', items: system });
   return groups;
 }
 
