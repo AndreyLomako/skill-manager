@@ -179,32 +179,44 @@ export async function loadCatalog(
   const baseSkills = await resolveLayer('base', base, paths.baseCatalogDir, paths.cacheDir, update, clone, git, errors);
   const userSkills = await resolveLayer('user', user, paths.userDir, paths.cacheDir, update, clone, git, errors);
 
-  const byId = new Map<string, CatalogSkill>();
-  for (const s of [...baseSkills, ...userSkills]) byId.set(s.id, s);
-
-  const packById = new Map<string, CatalogPack>();
-  for (const [layer, m] of [['base', base], ['user', user]] as const) {
-    for (const p of m.packs) packById.set(p.id, { ...p, summary: p.summary ?? '', layer });
-  }
-  const packs = [...packById.values()];
-
-  const categories = mergeCategories(base.categories, user.categories, [...byId.values()]);
-  const known = new Map(categories.map((c) => [c.id, c]));
-  for (const c of categories) {
+  const declared = mergeCategories(base.categories, user.categories, []);
+  const known = new Map(declared.map((c) => [c.id, c]));
+  for (const c of declared) {
     if (c.parent && !known.get(c.parent)) {
       errors.push(`Категория «${c.title}»: родительская категория «${c.parent}» не найдена`);
       delete c.parent;
     }
   }
-  const parents = new Set(categories.flatMap((c) => (c.parent ? [c.parent] : [])));
-  const skills = [...byId.values()].map((s) =>
-    parents.has(s.category) && !s.error
-      ? {
-          ...s,
-          error: `Категория «${known.get(s.category)?.title ?? s.category}» разделена на подкатегории — укажите подкатегорию`,
-        }
-      : s,
-  );
+  const resolve = categoryResolver(declared);
 
+  const byId = new Map<string, CatalogSkill>();
+  for (const s of [...baseSkills, ...userSkills]) byId.set(s.id, { ...s, category: resolve(s.category) });
+  const skills = [...byId.values()];
+
+  const packById = new Map<string, CatalogPack>();
+  for (const [layer, m] of [['base', base], ['user', user]] as const) {
+    for (const p of m.packs) packById.set(p.id, { ...p, category: resolve(p.category), summary: p.summary ?? '', layer });
+  }
+  const packs = [...packById.values()];
+
+  const categories = mergeCategories(declared, [], skills);
   return { categories, skills, packs, errors };
+}
+
+// Категории прошлых версий базового каталога, которые могли остаться в user-catalog.json.
+const LEGACY_CATEGORY: Record<string, string> = { graphics: 'design' }; // v0.2.1: «Графика» → «Дизайн»
+
+/**
+ * Куда на самом деле попадает скилл или пак: старый id — в новую категорию (если такой
+ * категории больше нет), категория с подкатегориями — в первую подкатегорию.
+ */
+function categoryResolver(categories: CategoryDef[]): (id: string) => string {
+  const ids = new Set(categories.map((c) => c.id));
+  const firstChild = new Map<string, string>();
+  for (const c of categories) if (c.parent && !firstChild.has(c.parent)) firstChild.set(c.parent, c.id);
+  return (id) => {
+    const legacy = Object.hasOwn(LEGACY_CATEGORY, id) ? LEGACY_CATEGORY[id] : undefined;
+    const actual = !ids.has(id) && legacy && ids.has(legacy) ? legacy : id;
+    return firstChild.get(actual) ?? actual;
+  };
 }

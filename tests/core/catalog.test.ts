@@ -240,16 +240,73 @@ describe('loadCatalog: каталог v2', () => {
     expect(c.skills.every((s) => s.pack === 'p')).toBe(true);
   });
 
-  it('скилл в категории, разделённой на подкатегории, — ошибка с подсказкой', async () => {
+  it('скилл и пак в категории с подкатегориями попадают в первую подкатегорию', async () => {
     const { paths } = await setup(
       v2({
-        categories: [{ id: 'video', title: 'Видео' }, { id: 'cut', title: 'Монтаж', parent: 'video' }],
-        skills: [{ id: 'palette', source: 'samples', path: 'palette', category: 'video' }],
+        categories: [
+          { id: 'video', title: 'Видео' },
+          { id: 'gen', title: 'Генерация', parent: 'video', order: 2 },
+          { id: 'cut', title: 'Монтаж', parent: 'video', order: 1 },
+        ],
+        skills: [
+          { id: 'palette', source: 'samples', path: 'palette', category: 'video' },
+          { id: 'icons', source: 'samples', path: 'icons', category: 'video' },
+        ],
+        packs: [{ id: 'p', title: 'Пак', category: 'video', skills: ['icons'] }],
       }),
     );
     const c = await loadCatalog(paths);
-    expect(c.skills[0].error).toMatch(/Видео.*подкатегори/);
+    expect(c.skills.map((s) => [s.id, s.category, s.error])).toEqual([
+      ['palette', 'cut', undefined],
+      ['icons', 'cut', undefined],
+    ]);
+    expect(c.packs[0].category).toBe('cut');
     expect(c.categories.find((x) => x.id === 'cut')?.parent).toBe('video');
+  });
+
+  it('user-catalog.json из v0.2.1: «graphics» → «Дизайн», «video» → первая подкатегория', async () => {
+    const { paths } = await setup(
+      v2({
+        categories: [
+          { id: 'design', title: 'Дизайн', order: 1 },
+          { id: 'video', title: 'Видео', order: 2 },
+          { id: 'video-editing', title: 'Монтаж', parent: 'video', order: 1 },
+          { id: 'video-generation', title: 'Генерация', parent: 'video', order: 2 },
+        ],
+      }),
+      {
+        version: 1,
+        categories: [],
+        sources: [{ id: 'mine', type: 'local', path: './mine' }],
+        skills: [
+          { id: 'old-graphics', source: 'mine', path: 'a', category: 'graphics' },
+          { id: 'old-video', source: 'mine', path: 'b', category: 'video' },
+        ],
+      },
+      { 'user/mine/a/SKILL.md': skillMd('A'), 'user/mine/b/SKILL.md': skillMd('B') },
+    );
+    const c = await loadCatalog(paths);
+    expect(c.skills.map((s) => [s.id, s.category, s.error])).toEqual([
+      ['old-graphics', 'design', undefined],
+      ['old-video', 'video-editing', undefined],
+    ]);
+    expect(c.categories.map((x) => x.id)).not.toContain('graphics');
+    expect(c.errors).toEqual([]);
+  });
+
+  it('своя категория «graphics» в user-catalog.json не переименовывается', async () => {
+    const { paths } = await setup(
+      v2({ categories: [{ id: 'design', title: 'Дизайн' }] }),
+      {
+        version: 1,
+        categories: [{ id: 'graphics', title: 'Моя графика' }],
+        sources: [{ id: 'mine', type: 'local', path: './mine' }],
+        skills: [{ id: 'g', source: 'mine', path: 'a', category: 'graphics' }],
+      },
+      { 'user/mine/a/SKILL.md': skillMd('A') },
+    );
+    const c = await loadCatalog(paths);
+    expect(c.skills[0].category).toBe('graphics');
   });
 
   it('git-источник получает sparse — пути всех его скиллов (по агентам)', async () => {
