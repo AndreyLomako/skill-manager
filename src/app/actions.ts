@@ -57,6 +57,9 @@ async function checkScope(paths: AppPaths, scope: unknown): Promise<Scope | null
 
 const UNKNOWN_SCOPE = 'Проект не найден в списке';
 
+// Клонирует только загрузка каталога (getCatalogAction); остальные действия не ждут сеть.
+const NO_CLONE = { clone: false } as const;
+
 export async function getInstalledAction(
   scope: Scope,
   agents: AgentId[],
@@ -64,7 +67,7 @@ export async function getInstalledAction(
   const paths = appPaths();
   const checked = await checkScope(paths, scope);
   if (!checked) return {};
-  const catalog = await loadCatalog(paths);
+  const catalog = await loadCatalog(paths, NO_CLONE);
   const out: Partial<Record<AgentId, InstalledState>> = {};
   for (const agent of parseAgents(agents)) {
     out[agent] = await getInstalled(skillRoots(checked, agent, paths.home), catalog.skills, agent);
@@ -87,7 +90,7 @@ export async function installSkillsAction(
       ids.map((skillId) => ({ skillId, status: 'error' as const, message: UNKNOWN_SCOPE, agent })),
     );
   }
-  const catalog = await loadCatalog(paths);
+  const catalog = await loadCatalog(paths, NO_CLONE);
   const out: InstallResult[] = [];
   for (const agent of list) {
     const results = await installSkills(skillsRoot(checked, agent, paths.home), catalog.skills, ids, {
@@ -105,7 +108,7 @@ export async function listInstalledAction(scope: Scope, agents: AgentId[]): Prom
   const checked = await checkScope(paths, scope);
   if (!checked) return [];
   await purgeTrash(paths.trashDir).catch(() => undefined);
-  const catalog = await loadCatalog(paths);
+  const catalog = await loadCatalog(paths, NO_CLONE);
   return listInstalled(checked, parseAgents(agents), paths.home, catalog.skills);
 }
 
